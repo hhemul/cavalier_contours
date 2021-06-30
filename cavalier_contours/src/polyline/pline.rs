@@ -12,7 +12,8 @@ use super::{
     },
     seg_bounding_box, BooleanOp, BooleanResult, ClosestPointResult, FindIntersectsOptions,
     PlineBooleanOptions, PlineIntersectVisitor, PlineIntersectsCollection, PlineOffsetOptions,
-    PlineOrientation, PlineSelfIntersectOptions, PlineVertex, SelfIntersectsInclude,
+    PlineOrientation, PlineSegIterator3, PlineSelfIntersectOptions, PlineVertex, PlineVertexRef,
+    PolylineRef, SelfIntersectsInclude,
 };
 use crate::core::{
     math::{
@@ -942,10 +943,9 @@ where
     ///
     /// This is equivalent to [Polyline::visit_segments] but returns an iterator rather than
     /// accepting a visiting function.
-    pub fn iter_segments(
-        &self,
-    ) -> impl Iterator<Item = (PlineVertex<T>, PlineVertex<T>)> + Clone + '_ {
-        PlineSegIterator::new(&self)
+    pub fn iter_segments(&self) -> impl Iterator<Item = (PlineVertex<T>, PlineVertex<T>)> + '_ {
+        PlineSegIterator::new(self)
+        // PlineSegIterator3::new(self)
     }
 
     /// Iterate through all the polyline segment vertex positional indexes.
@@ -1550,6 +1550,21 @@ where
         }
 
         Some(result)
+    }
+}
+
+impl<'a, T> PolylineRef for Polyline<T>
+where
+    T: Real,
+{
+    type Num = T;
+    type Vertex = PlineVertex<Self::Num>;
+
+    fn vertexes(&self) -> &[Self::Vertex] {
+        &self.vertex_data[..]
+    }
+    fn is_closed(&self) -> bool {
+        self.is_closed
     }
 }
 
