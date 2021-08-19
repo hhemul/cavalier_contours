@@ -11,9 +11,9 @@ use super::{
         seg_fast_approx_bounding_box, seg_length,
     },
     seg_bounding_box, BooleanOp, BooleanResult, ClosestPointResult, FindIntersectsOptions,
+    IterablePlineSegments, IterablePlineVertexes, IterablePlineVertexesMut, IterablePolyline,
     PlineBooleanOptions, PlineIntersectVisitor, PlineIntersectsCollection, PlineOffsetOptions,
-    PlineOrientation, PlineSegIterator3, PlineSelfIntersectOptions, PlineVertex, PlineVertexRef,
-    PolylineRef, SelfIntersectsInclude,
+    PlineOrientation, PlineSelfIntersectOptions, PlineVertex, SelfIntersectsInclude,
 };
 use crate::core::{
     math::{
@@ -27,6 +27,7 @@ use serde::{Deserialize, Serialize};
 use static_aabb2d_index::{StaticAABB2DIndex, StaticAABB2DIndexBuilder, AABB};
 use std::{
     borrow::Cow,
+    iter::Copied,
     ops::{Index, IndexMut},
     slice::Windows,
 };
@@ -42,8 +43,8 @@ use std::{
 #[derive(Debug, Clone)]
 pub struct Polyline<T = f64> {
     #[cfg_attr(feature = "serde", serde(rename = "vertexes"))]
-    vertex_data: Vec<PlineVertex<T>>,
-    is_closed: bool,
+    pub vertex_data: Vec<PlineVertex<T>>,
+    pub is_closed: bool,
 }
 
 impl<T> Default for Polyline<T>
@@ -1553,18 +1554,62 @@ where
     }
 }
 
-impl<'a, T> PolylineRef for Polyline<T>
+impl<'a, T> IterablePlineVertexesMut<'a> for Polyline<T>
 where
-    T: Real,
+    T: Real + 'a,
 {
     type Num = T;
-    type Vertex = PlineVertex<Self::Num>;
 
-    fn vertexes(&self) -> &[Self::Vertex] {
-        &self.vertex_data[..]
+    type Iter = std::slice::IterMut<'a, PlineVertex<T>>;
+
+    fn iter_vertexes_mut(&'a mut self) -> Self::Iter {
+        self.vertex_data.iter_mut()
     }
+}
+
+impl<'a, T> IterablePlineSegments<'a> for Polyline<T>
+where
+    T: Real + 'a,
+{
+    type Num = T;
+
+    type Iter = PlineSegIterator<'a, T>;
+
+    fn iter_segments(&'a self) -> Self::Iter {
+        PlineSegIterator::new(self)
+    }
+
+    fn segment_count(&'a self) -> usize {
+        if self.is_closed() && self.len() > 1 {
+            self.len()
+        } else {
+            self.len() - 1
+        }
+    }
+}
+
+impl<'a, T> IterablePlineVertexes<'a> for Polyline<T>
+where
+    T: Real + 'a,
+{
+    type Num = T;
+    type Iter = Copied<std::slice::Iter<'a, PlineVertex<T>>>;
+
+    fn iter_vertexes(&'a self) -> Self::Iter {
+        self.vertex_data.iter().copied()
+    }
+
+    fn vertex_count(&'a self) -> usize {
+        self.len()
+    }
+}
+
+impl<'a, T> IterablePolyline<'a, T> for Polyline<T>
+where
+    T: Real + 'a,
+{
     fn is_closed(&self) -> bool {
-        self.is_closed
+        self.is_closed()
     }
 }
 
@@ -1587,7 +1632,7 @@ impl<T> IndexMut<usize> for Polyline<T> {
 
 /// An iterator that traverses all segment vertex pairs.
 #[derive(Debug, Clone)]
-struct PlineSegIterator<'a, T>
+pub struct PlineSegIterator<'a, T>
 where
     T: Real,
 {
@@ -1600,7 +1645,7 @@ impl<'a, T> PlineSegIterator<'a, T>
 where
     T: Real,
 {
-    fn new(polyline: &'a Polyline<T>) -> PlineSegIterator<'a, T> {
+    pub fn new(polyline: &'a Polyline<T>) -> PlineSegIterator<'a, T> {
         let vertex_windows = polyline.vertex_data.windows(2);
         let wrap_not_exhausted = if polyline.vertex_data.len() < 2 {
             false
