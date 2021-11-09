@@ -8,7 +8,7 @@ use crate::{
         pline_seg_intr, seg_fast_approx_bounding_box, seg_split_at_point, seg_tangent_vector,
         FindIntersectsOptions, PlineBasicIntersect, PlineIntersectVisitor,
         PlineIntersectsCollection, PlineOverlappingIntersect, PlineSegIntr, PlineVertex, Polyline,
-        PolylineSlice,
+        PolylineRef, PolylineSlice,
     },
 };
 use static_aabb2d_index as aabb_index;
@@ -17,22 +17,23 @@ use std::collections::HashSet;
 
 /// Visits all local self intersects of the polyline. Local self intersects are defined as between
 /// two polyline segments that share a vertex.
-pub fn visit_local_self_intersects<T, C, V>(
-    polyline: &Polyline<T>,
+pub fn visit_local_self_intersects<'a, P, T, C, V>(
+    polyline: &P,
     visitor: &mut V,
     pos_equal_eps: T,
 ) -> C
 where
+    P: PolylineRef<'a, Num = T> + ?Sized,
     T: Real,
     C: ControlFlow,
     V: PlineIntersectVisitor<T, C>,
 {
-    let ln = polyline.len();
-    if ln < 2 {
+    let vc = polyline.vertex_count();
+    if vc < 2 {
         return C::continuing();
     }
 
-    if ln == 2 {
+    if vc == 2 {
         if polyline.is_closed() {
             // check if entirely overlaps self
             if polyline[0].bulge.fuzzy_eq(-polyline[1].bulge) {
@@ -96,7 +97,7 @@ where
         C::continuing()
     };
 
-    for i in 2..ln {
+    for i in 2..vc {
         try_cf!(visit_indexes(i - 2, i - 1, i));
     }
 
@@ -104,8 +105,8 @@ where
         // we tested for intersect between segments at indexes 0->1, 1->2 and everything up to and
         // including (count-3)->(count-2), (count-2)->(count-1), polyline is closed so now test
         // [(count-2)->(count-1), (count-1)->0] and [(count-1)->0, 0->1]
-        try_cf!(visit_indexes(ln - 2, ln - 1, 0));
-        try_cf!(visit_indexes(ln - 1, 0, 1));
+        try_cf!(visit_indexes(vc - 2, vc - 1, 0));
+        try_cf!(visit_indexes(vc - 1, 0, 1));
     }
     C::continuing()
 }
@@ -120,24 +121,25 @@ where
 /// start of that segment is recorded (unless the polyline is open and the intersect is at the very
 /// end of the polyline, then the second to last vertex index is used to maintain that it represents
 /// the start of a polyline segment).
-pub fn visit_global_self_intersects<T, C, V>(
-    polyline: &Polyline<T>,
+pub fn visit_global_self_intersects<'a, P, T, C, V>(
+    polyline: &P,
     aabb_index: &StaticAABB2DIndex<T>,
     visitor: &mut V,
     pos_equal_eps: T,
 ) -> C
 where
+    P: PolylineRef<'a, Num = T> + ?Sized,
     T: Real,
     C: ControlFlow,
     V: PlineIntersectVisitor<T, C>,
 {
-    let ln = polyline.len();
+    let vc = polyline.vertex_count();
 
-    if ln < 3 {
+    if vc < 3 {
         return C::continuing();
     }
 
-    let mut visited_pairs = HashSet::with_capacity(ln);
+    let mut visited_pairs = HashSet::with_capacity(vc);
     let mut query_stack = Vec::with_capacity(8);
     let fuzz = T::fuzzy_epsilon();
 
@@ -235,12 +237,13 @@ where
 
 /// Find all self intersects of a polyline, returning any overlapping intersects as basic intersects
 /// at each end point of overlap segment.
-pub fn all_self_intersects_as_basic<T>(
-    polyline: &Polyline<T>,
+pub fn all_self_intersects_as_basic<'a, P, T>(
+    polyline: &'a P,
     aabb_index: &StaticAABB2DIndex<T>,
     pos_equal_eps: T,
 ) -> Vec<PlineBasicIntersect<T>>
 where
+    P: PolylineRef<'a, Num = T>,
     T: Real,
 {
     struct Visitor<U> {
@@ -293,16 +296,18 @@ where
 /// start of that segment is recorded (unless the polyline is open and the intersect is at the very
 /// end of the polyline, then the second to last vertex index is used to maintain that it represents
 /// the start of a polyline segment).
-pub fn find_intersects<T>(
-    pline1: &Polyline<T>,
-    pline2: &Polyline<T>,
+pub fn find_intersects<'a, 'b, P, O, T>(
+    pline1: &'a P,
+    pline2: &'b O,
     options: &FindIntersectsOptions<T>,
 ) -> PlineIntersectsCollection<T>
 where
+    P: PolylineRef<'a, Num = T> + ?Sized,
+    O: PolylineRef<'b, Num = T> + ?Sized,
     T: Real,
 {
     let mut result = PlineIntersectsCollection::new_empty();
-    if pline1.len() < 2 || pline2.len() < 2 {
+    if pline1.vertex_count() < 2 || pline2.vertex_count() < 2 {
         return result;
     }
 
@@ -323,8 +328,8 @@ where
 
     // last polyline segment starting indexes for open polylines (used to check when skipping
     // intersects at end points of polyline segments)
-    let open1_last_idx = pline1.len() - 2;
-    let open2_last_idx = pline2.len() - 2;
+    let open1_last_idx = pline1.vertex_count() - 2;
+    let open2_last_idx = pline2.vertex_count() - 2;
 
     for (i2, j2) in pline2.iter_segment_indexes() {
         let p2v1 = pline2[i2];
@@ -524,9 +529,9 @@ where
                     Self {
                         start_indexes,
                         end_indexes: start_indexes,
-                        end_index_offset: pline2.len() - 1,
+                        end_index_offset: pline2.vertex_count() - 1,
                         updated_start: start_u1,
-                        updated_end_bulge: pline2[pline2.len() - 1].bulge,
+                        updated_end_bulge: pline2[pline2.vertex_count() - 1].bulge,
                         end_point: end_intr.point2,
                         is_loop: true,
                         opposing_directions,
@@ -751,7 +756,10 @@ where
 #[cfg(test)]
 mod local_self_intersect_tests {
     use super::*;
-    use crate::{core::math::bulge_from_angle, polyline::PlineIntersect};
+    use crate::{
+        core::math::bulge_from_angle,
+        polyline::{PlineIntersect, PolylineRefMut},
+    };
 
     fn local_self_intersects<T>(
         polyline: &Polyline<T>,
@@ -849,7 +857,10 @@ mod local_self_intersect_tests {
 #[cfg(test)]
 mod global_self_intersect_tests {
     use super::*;
-    use crate::{core::math::bulge_from_angle, polyline::PlineIntersect};
+    use crate::{
+        core::math::bulge_from_angle,
+        polyline::{PlineIntersect, PolylineRefMut},
+    };
 
     fn global_self_intersects<T>(
         polyline: &Polyline<T>,
@@ -927,7 +938,7 @@ mod global_self_intersect_tests {
         assert_eq!(intrs.basic_intersects[0].start_index1, 0);
         assert_eq!(
             intrs.basic_intersects[0].start_index2,
-            pline_as_lines.len() - 2
+            pline_as_lines.vertex_count() - 2
         );
 
         assert_fuzzy_eq!(intrs.basic_intersects[0].point, Vector2::new(0.0, 0.0));
@@ -952,6 +963,8 @@ mod global_self_intersect_tests {
 
 #[cfg(test)]
 mod find_intersects_tests {
+    use crate::polyline::PolylineRefMut;
+
     use super::*;
 
     #[test]
@@ -1138,6 +1151,7 @@ mod sort_and_join_overlapping_intersects_tests {
     use super::*;
     use crate::core::math::bulge_from_angle;
     use crate::core::traits::FuzzyEq;
+    use crate::polyline::{PolylineCreation, PolylineRefMut};
 
     #[test]
     fn overlapping_circles_same_dir() {
@@ -1160,7 +1174,7 @@ mod sort_and_join_overlapping_intersects_tests {
 
         assert_eq!(slices.len(), 1);
         let slice_pline = slices[0].to_polyline(&pline2, 1e-5);
-        assert_eq!(slice_pline.len(), 3);
+        assert_eq!(slice_pline.vertex_count(), 3);
         assert_fuzzy_eq!(slice_pline[0], pline2[0]);
         assert_fuzzy_eq!(slice_pline[1], pline2[1]);
         assert_fuzzy_eq!(slice_pline[2], pline2[0].with_bulge(0.0));
@@ -1191,7 +1205,7 @@ mod sort_and_join_overlapping_intersects_tests {
 
         assert_eq!(slices.len(), 1);
         let slice_pline = slices[0].to_polyline(&pline2, 1e-5);
-        assert_eq!(slice_pline.len(), 3);
+        assert_eq!(slice_pline.vertex_count(), 3);
         assert_fuzzy_eq!(slice_pline[0], pline2[0]);
         assert_fuzzy_eq!(slice_pline[1], pline2[1]);
         assert_fuzzy_eq!(slice_pline[2], pline2[0].with_bulge(0.0));
@@ -1222,7 +1236,7 @@ mod sort_and_join_overlapping_intersects_tests {
 
         assert_eq!(slices.len(), 1);
         let slice_pline = slices[0].to_polyline(&pline2, 1e-5);
-        assert_eq!(slice_pline.len(), 3);
+        assert_eq!(slice_pline.vertex_count(), 3);
         assert_fuzzy_eq!(slice_pline[0], pline2[0]);
         assert_fuzzy_eq!(slice_pline[1], pline2[1]);
         assert_fuzzy_eq!(slice_pline[2], pline2[0].with_bulge(0.0));
@@ -1253,7 +1267,7 @@ mod sort_and_join_overlapping_intersects_tests {
 
         assert_eq!(slices.len(), 1);
         let slice_pline = slices[0].to_polyline(&pline2, 1e-5);
-        assert_eq!(slice_pline.len(), 3);
+        assert_eq!(slice_pline.vertex_count(), 3);
         assert_fuzzy_eq!(slice_pline[0], pline2[0]);
         assert_fuzzy_eq!(slice_pline[1], pline2[1]);
         assert_fuzzy_eq!(slice_pline[2], pline2[0].with_bulge(0.0));
@@ -1294,7 +1308,7 @@ mod sort_and_join_overlapping_intersects_tests {
 
         assert_eq!(slices.len(), 1);
         let slice_pline = slices[0].to_polyline(&pline2, 1e-5);
-        assert_eq!(slice_pline.len(), 2);
+        assert_eq!(slice_pline.vertex_count(), 2);
         assert_fuzzy_eq!(slice_pline[0], pline2[0]);
         assert_fuzzy_eq!(slice_pline[1], pline2[1]);
 
@@ -1337,7 +1351,7 @@ mod sort_and_join_overlapping_intersects_tests {
 
         assert_eq!(slices.len(), 1);
         let slice_pline = slices[0].to_polyline(&pline2, 1e-5);
-        assert_eq!(slice_pline.len(), 6);
+        assert_eq!(slice_pline.vertex_count(), 6);
         assert_fuzzy_eq!(slice_pline[0], pline2[5]);
         assert_fuzzy_eq!(slice_pline[1], pline2[6]);
         assert_fuzzy_eq!(slice_pline[2], pline2[7]);

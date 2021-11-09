@@ -8,7 +8,10 @@ use cavalier_contours::{
         Control,
     },
     pline_closed, pline_open,
-    polyline::{seg_length, OpenPlineSlice, PlineVertex, Polyline, PolylineSlice},
+    polyline::{
+        seg_length, OpenPlineSlice, PlineVertex, Polyline, PolylineRef, PolylineRefMut,
+        PolylineSlice,
+    },
 };
 
 const POS_EQ_EPS: f64 = 1e-5;

@@ -2,7 +2,10 @@
 #![allow(non_camel_case_types)]
 use cavalier_contours::{
     core::math::Vector2,
-    polyline::{BooleanOp, PlineBooleanOptions, PlineOffsetOptions, PlineVertex, Polyline},
+    polyline::{
+        BooleanOp, PlineBooleanOptions, PlineOffsetOptions, PlineVertex, Polyline, PolylineRef,
+        PolylineRefMut,
+    },
     static_aabb2d_index::StaticAABB2DIndex,
 };
 use core::slice;
@@ -408,7 +411,7 @@ pub unsafe extern "C" fn cavc_pline_get_vertex_count(
 
         // using try_from to catch odd case of polyline vertex count greater than u32::MAX to
         // prevent memory corruption/access errors but just panic as internal error if it does occur
-        count.write(u32::try_from((*pline).0.len()).unwrap());
+        count.write(u32::try_from((*pline).0.vertex_count()).unwrap());
         0
     })
 }
@@ -440,9 +443,9 @@ pub unsafe extern "C" fn cavc_pline_get_vertex_data(
             return 1;
         }
 
-        let buffer = slice::from_raw_parts_mut(vertex_data, (*pline).0.len());
-        for (i, v) in (*pline).0.iter().enumerate() {
-            buffer[i] = cavc_vertex::new(v.x, v.y, v.bulge);
+        let buffer = slice::from_raw_parts_mut(vertex_data, (*pline).0.vertex_count());
+        for (i, v) in (*pline).0.iter_vertexes().enumerate() {
+            buffer[i] = cavc_vertex::from_internal(v);
         }
         0
     })
@@ -554,7 +557,7 @@ pub unsafe extern "C" fn cavc_pline_get_vertex(
             return 1;
         }
 
-        if position >= (*pline).0.len() as u32 {
+        if position >= (*pline).0.vertex_count() as u32 {
             return 2;
         }
 
@@ -589,7 +592,7 @@ pub unsafe extern "C" fn cavc_pline_set_vertex(
             return 1;
         }
 
-        if position >= (*pline).0.len() as u32 {
+        if position >= (*pline).0.vertex_count() as u32 {
             return 2;
         }
 
@@ -618,7 +621,7 @@ pub unsafe extern "C" fn cavc_pline_remove(pline: *mut cavc_pline, position: u32
             return 1;
         }
 
-        if position as usize >= (*pline).0.len() {
+        if position as usize >= (*pline).0.vertex_count() {
             return 2;
         }
 
@@ -723,7 +726,7 @@ pub unsafe extern "C" fn cavc_pline_invert_direction(pline: *mut cavc_pline) -> 
         if pline.is_null() {
             return 1;
         }
-        (*pline).0.invert_direction();
+        (*pline).0.invert_direction_mut();
         0
     })
 }
@@ -744,7 +747,7 @@ pub unsafe extern "C" fn cavc_pline_scale(pline: *mut cavc_pline, scale_factor: 
         if pline.is_null() {
             return 1;
         }
-        (*pline).0.scale(scale_factor);
+        (*pline).0.scale_mut(scale_factor);
         0
     })
 }
@@ -769,7 +772,7 @@ pub unsafe extern "C" fn cavc_pline_translate(
         if pline.is_null() {
             return 1;
         }
-        (*pline).0.translate(x_offset, y_offset);
+        (*pline).0.translate_mut(x_offset, y_offset);
         0
     })
 }
@@ -794,11 +797,11 @@ pub unsafe extern "C" fn cavc_pline_remove_repeat_pos(
             return 1;
         }
         match (*pline).0.remove_repeat_pos(pos_equal_eps) {
-            std::borrow::Cow::Borrowed(_) => {
+            None => {
                 // do nothing (no repeat positions, leave unchanged)
                 0
             }
-            std::borrow::Cow::Owned(x) => {
+            Some(x) => {
                 // update self with result
                 (*pline).0 = x;
                 0
@@ -827,11 +830,11 @@ pub unsafe extern "C" fn cavc_pline_remove_redundant(
             return 1;
         }
         match (*pline).0.remove_redundant(pos_equal_eps) {
-            std::borrow::Cow::Borrowed(_) => {
+            None => {
                 // do nothing (no repeat positions, leave unchanged)
                 0
             }
-            std::borrow::Cow::Owned(x) => {
+            Some(x) => {
                 // update self with result
                 (*pline).0 = x;
                 0
