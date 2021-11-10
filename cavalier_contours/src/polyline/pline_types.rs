@@ -113,44 +113,44 @@ pub enum BooleanOp {
 )]
 /// Represents one of the polyline results from a boolean operation between two polylines.
 #[derive(Debug, Clone, Default)]
-pub struct BooleanResultPline<T>
+pub struct BooleanResultPline<P>
 where
-    T: Real,
+    P: PolylineCreation,
 {
     /// Resultant polyline.
-    pub pline: Polyline<T>,
+    pub pline: P,
     /// Indexes of the slices that were stitched together to form the `pline`.
-    pub subslices: Vec<BooleanPlineSlice<T>>,
+    pub subslices: Vec<BooleanPlineSlice<P::Num>>,
 }
 
-impl<T> BooleanResultPline<T>
+impl<P> BooleanResultPline<P>
 where
-    T: Real,
+    P: PolylineCreation,
 {
-    pub fn new(pline: Polyline<T>, subslices: Vec<BooleanPlineSlice<T>>) -> Self {
+    pub fn new(pline: P, subslices: Vec<BooleanPlineSlice<P::Num>>) -> Self {
         Self { pline, subslices }
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 /// Result of performing a boolean operation between two polylines.
-pub struct BooleanResult<T>
+pub struct BooleanResult<P>
 where
-    T: Real,
+    P: PolylineCreation,
 {
     /// Positive remaining space polylines and associated slice indexes.
-    pub pos_plines: Vec<BooleanResultPline<T>>,
+    pub pos_plines: Vec<BooleanResultPline<P>>,
     /// Negative subtracted space polylines and associated slice indexes.
-    pub neg_plines: Vec<BooleanResultPline<T>>,
+    pub neg_plines: Vec<BooleanResultPline<P>>,
 }
 
-impl<T> BooleanResult<T>
+impl<P> BooleanResult<P>
 where
-    T: Real,
+    P: PolylineCreation,
 {
     pub fn new(
-        pos_plines: Vec<BooleanResultPline<T>>,
-        neg_plines: Vec<BooleanResultPline<T>>,
+        pos_plines: Vec<BooleanResultPline<P>>,
+        neg_plines: Vec<BooleanResultPline<P>>,
     ) -> Self {
         Self {
             pos_plines,
@@ -158,9 +158,14 @@ where
         }
     }
 
+    #[inline]
+    pub fn empty() -> Self {
+        Self::new(Vec::new(), Vec::new())
+    }
+
     pub fn from_whole_plines<I>(pos_plines: I, neg_plines: I) -> Self
     where
-        I: IntoIterator<Item = Polyline<T>>,
+        I: IntoIterator<Item = P>,
     {
         Self {
             pos_plines: pos_plines
@@ -686,7 +691,7 @@ where
     fn to_polyline<P, O>(&self, source: &P, pos_equal_eps: T) -> O
     where
         P: PolylineRef<Num = T> + ?Sized,
-        O: for<'b> PolylineRefMut<'b, Num = T> + PolylineCreation,
+        O: PolylineCreation<Num = T>,
     {
         let vertex_count = self.vertex_count();
         let mut result = O::with_capacity(vertex_count, false);
@@ -761,10 +766,10 @@ where
     ///
     /// `pos_equal_eps` is used to prevent repeat position vertexes.
     #[inline]
-    fn stitch_onto<'b, P, O>(&self, source: &P, target: &'b mut O, pos_equal_eps: T)
+    fn stitch_onto<P, O>(&self, source: &P, target: &mut O, pos_equal_eps: T)
     where
         P: PolylineRef<Num = T> + ?Sized,
-        O: PolylineRefMut<'b, Num = T> + ?Sized,
+        O: PolylineRefMut<Num = T> + ?Sized,
     {
         target.reserve(self.vertex_count());
         let mut visitor = |v: PlineVertex<T>| {
@@ -1076,8 +1081,8 @@ where
 
     /// Construct slice that is contiguous between two points on a source polyline (start and end of
     /// source polyline are trimmed).
-    pub fn from_slice_points<'a, P>(
-        source: &'a P,
+    pub fn from_slice_points<P>(
+        source: &P,
         start_point: Vector2<T>,
         start_index: usize,
         end_point: Vector2<T>,
@@ -1252,11 +1257,14 @@ where
     }
 
     #[inline]
-    pub fn from_overlapping(
-        source: &Polyline<T>,
+    pub fn from_overlapping<P>(
+        source: &P,
         overlapping_slice: &OverlappingSlice<T>,
         inverted: bool,
-    ) -> Self {
+    ) -> Self
+    where
+        P: PolylineRef<Num = T> + ?Sized,
+    {
         let result = Self {
             start_index: overlapping_slice.start_indexes.1,
             end_index_offset: overlapping_slice.end_index_offset,

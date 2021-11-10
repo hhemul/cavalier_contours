@@ -11,7 +11,7 @@ use crate::{
         internal::pline_intersects::{all_self_intersects_as_basic, find_intersects},
         pline_seg_intr, seg_arc_radius_and_center, seg_closest_point, seg_fast_approx_bounding_box,
         seg_midpoint, FindIntersectsOptions, OpenPlineSlice, PlineOffsetOptions, PlineSegIntr,
-        PlineVertex, Polyline, PolylineCreation, PolylineRef, PolylineRefMut, PolylineSlice,
+        PlineVertex, PolylineCreation, PolylineRef, PolylineRefMut, PolylineSlice,
     },
 };
 use core::panic;
@@ -127,7 +127,7 @@ fn connect_using_arc<T, O>(
     pos_equal_eps: T,
 ) where
     T: Real,
-    O: for<'a> PolylineRefMut<'a, Num = T>,
+    O: PolylineRefMut<Num = T>,
 {
     let arc_center = s1.orig_v2_pos;
     let sp = s1.v2.pos();
@@ -153,7 +153,7 @@ fn line_line_join<T, O>(
     result: &mut O,
 ) where
     T: Real,
-    O: for<'a> PolylineRefMut<'a, Num = T>,
+    O: PolylineRefMut<Num = T>,
 {
     let connection_arcs_ccw = params.connection_arcs_ccw;
     let pos_equal_eps = params.pos_equal_eps;
@@ -212,7 +212,7 @@ fn line_arc_join<T, O>(
     result: &mut O,
 ) where
     T: Real,
-    O: for<'a> PolylineRefMut<'a, Num = T>,
+    O: PolylineRefMut<Num = T>,
 {
     let connection_arcs_ccw = params.connection_arcs_ccw;
     let pos_equal_eps = params.pos_equal_eps;
@@ -299,7 +299,7 @@ fn arc_line_join<T, O>(
     result: &mut O,
 ) where
     T: Real,
-    O: for<'a> PolylineRefMut<'a, Num = T>,
+    O: PolylineRefMut<Num = T>,
 {
     let connection_arcs_ccw = params.connection_arcs_ccw;
     let pos_equal_eps = params.pos_equal_eps;
@@ -380,7 +380,7 @@ fn arc_arc_join<T, O>(
     result: &mut O,
 ) where
     T: Real,
-    O: for<'a> PolylineRefMut<'a, Num = T>,
+    O: PolylineRefMut<Num = T>,
 {
     let connection_arcs_ccw = params.connection_arcs_ccw;
     let pos_equal_eps = params.pos_equal_eps;
@@ -480,7 +480,7 @@ pub fn create_raw_offset_polyline<P, T, O>(polyline: &P, offset: T, pos_equal_ep
 where
     P: PolylineRef<Num = T> + ?Sized,
     T: Real,
-    O: for<'b> PolylineRefMut<'b, Num = T> + PolylineCreation,
+    O: PolylineCreation<Num = T>,
 {
     let vc = polyline.vertex_count();
     if vc < 2 {
@@ -1287,7 +1287,7 @@ pub fn stitch_slices_together<P, T, O>(
 where
     P: PolylineRef<Num = T> + ?Sized,
     T: Real,
-    O: for<'b> PolylineRefMut<'b, Num = T> + PolylineCreation,
+    O: PolylineCreation<Num = T>,
 {
     let mut result = Vec::new();
     if slices.is_empty() {
@@ -1426,7 +1426,7 @@ pub fn parallel_offset<P, T, O>(polyline: &P, offset: T, options: &PlineOffsetOp
 where
     P: PolylineRef<Num = T> + ?Sized,
     T: Real,
-    O: for<'b> PolylineRefMut<'b, Num = T> + PolylineCreation,
+    O: PolylineCreation<Num = T>,
 {
     if polyline.vertex_count() < 2 {
         return Vec::new();

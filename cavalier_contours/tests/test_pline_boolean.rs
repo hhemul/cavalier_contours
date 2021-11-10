@@ -9,7 +9,7 @@ use test_utils::{
     ModifiedPlineSetVisitor, ModifiedPlineState, PlineProperties,
 };
 
-fn create_boolean_property_set(polylines: &[BooleanResultPline<f64>]) -> Vec<PlineProperties> {
+fn create_boolean_property_set(polylines: &[BooleanResultPline<Polyline>]) -> Vec<PlineProperties> {
     for r in polylines {
         assert!(
             r.pline
@@ -31,7 +31,7 @@ fn run_same_boolean_test(
     use cavalier_contours::polyline::BooleanOp::*;
     // test same polyline
     for &op in [Or, And].iter() {
-        let result = self1.boolean(&self2, op);
+        let result = self1.boolean(self2, op);
         let mut passed = result.pos_plines.len() == 1 && result.neg_plines.is_empty();
         if passed {
             let result_properties = PlineProperties::from_pline(
@@ -49,7 +49,7 @@ fn run_same_boolean_test(
     }
 
     for &op in [Not, Xor].iter() {
-        let result = self1.boolean(&self2, op);
+        let result = self1.boolean(self2, op);
         let passed = result.pos_plines.is_empty() && result.neg_plines.is_empty();
         assert!(
             passed,
@@ -72,7 +72,7 @@ fn run_same_boolean_test(
     {
         let op = Or;
         let expected = &[disjoint1_properties, *input_properties];
-        let result = disjoint1.boolean(&self2, op);
+        let result = disjoint1.boolean(self2, op);
         let result_properties = create_boolean_property_set(&result.pos_plines);
         let passed =
             property_sets_match_abs_a(&result_properties, expected) && result.neg_plines.is_empty();
@@ -86,7 +86,7 @@ fn run_same_boolean_test(
     // disjoint AND
     {
         let op = And;
-        let result = disjoint1.boolean(&self2, op);
+        let result = disjoint1.boolean(self2, op);
         let passed = result.pos_plines.is_empty() && result.neg_plines.is_empty();
         assert!(
             passed,
@@ -99,7 +99,7 @@ fn run_same_boolean_test(
     {
         let op = Not;
         let expected = &[disjoint1_properties];
-        let result = disjoint1.boolean(&self2, op);
+        let result = disjoint1.boolean(self2, op);
         let result_properties = create_boolean_property_set(&result.pos_plines);
         let passed =
             property_sets_match_abs_a(&result_properties, expected) && result.neg_plines.is_empty();
@@ -114,7 +114,7 @@ fn run_same_boolean_test(
     {
         let op = Xor;
         let expected = &[disjoint1_properties, *input_properties];
-        let result = disjoint1.boolean(&self2, op);
+        let result = disjoint1.boolean(self2, op);
         let result_properties = create_boolean_property_set(&result.pos_plines);
         let passed =
             property_sets_match_abs_a(&result_properties, expected) && result.neg_plines.is_empty();
@@ -298,7 +298,11 @@ mod test_same {
     );
 }
 
-fn verify_slice_set(result_pline: &BooleanResultPline<f64>, pline1: &Polyline, pline2: &Polyline) {
+fn verify_slice_set(
+    result_pline: &BooleanResultPline<Polyline>,
+    pline1: &Polyline,
+    pline2: &Polyline,
+) {
     if result_pline.subslices.is_empty() {
         return;
     }
@@ -336,7 +340,11 @@ fn verify_slice_set(result_pline: &BooleanResultPline<f64>, pline1: &Polyline, p
     );
 }
 
-fn verify_all_slices(pline1: &Polyline, pline2: &Polyline, boolean_result: &BooleanResult<f64>) {
+fn verify_all_slices(
+    pline1: &Polyline,
+    pline2: &Polyline,
+    boolean_result: &BooleanResult<Polyline>,
+) {
     for result_pline in boolean_result
         .pos_plines
         .iter()

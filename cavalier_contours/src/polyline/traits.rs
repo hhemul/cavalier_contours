@@ -1,5 +1,3 @@
-use std::iter::{Copied, Skip, Zip};
-
 use static_aabb2d_index::{StaticAABB2DIndex, StaticAABB2DIndexBuilder, AABB};
 
 use crate::{
@@ -16,15 +14,16 @@ use crate::{
 use super::{
     arc_seg_bounding_box,
     internal::{
+        pline_boolean::polyline_boolean,
         pline_intersects::{
             find_intersects, visit_global_self_intersects, visit_local_self_intersects,
         },
         pline_offset::parallel_offset,
     },
     seg_bounding_box, seg_closest_point, seg_fast_approx_bounding_box, seg_length,
-    seg_split_at_point, ClosestPointResult, FindIntersectsOptions, PlineIntersectVisitor,
-    PlineIntersectsCollection, PlineOffsetOptions, PlineOrientation, PlineSegIterator,
-    PlineSelfIntersectOptions, PlineVertex, Polyline,
+    seg_split_at_point, BooleanOp, BooleanResult, ClosestPointResult, FindIntersectsOptions,
+    PlineBooleanOptions, PlineIntersectVisitor, PlineIntersectsCollection, PlineOffsetOptions,
+    PlineOrientation, PlineSelfIntersectOptions, PlineVertex, Polyline,
 };
 use num_traits::cast::NumCast;
 use num_traits::One;
@@ -190,9 +189,7 @@ pub trait PolylineRef {
     /// Numeric type used for the polyline.
     type Num: Real;
     /// Type used for output when invoking methods that return a new polyline.
-    type OutputPolyline: for<'b> PolylineRefMut<'b, Num = Self::Num>
-        + PolylineCreation<Num = Self::Num>
-        + 'static;
+    type OutputPolyline: PolylineCreation<Num = Self::Num> + 'static;
 
     /// Total number of vertexes.
     fn vertex_count(&self) -> usize;
@@ -1436,7 +1433,7 @@ pub trait PolylineRef {
 
     /// Find all intersects between two polylines using default options.
     #[inline]
-    fn find_intersects<'b, P>(&self, other: &'b P) -> PlineIntersectsCollection<Self::Num>
+    fn find_intersects<P>(&self, other: &P) -> PlineIntersectsCollection<Self::Num>
     where
         P: PolylineRef<Num = Self::Num>,
     {
@@ -1445,9 +1442,9 @@ pub trait PolylineRef {
 
     /// Find all intersects between two polylines using the options provided.
     #[inline]
-    fn find_intersects_opt<'b, P>(
+    fn find_intersects_opt<P>(
         &self,
-        other: &'b P,
+        other: &P,
         options: &FindIntersectsOptions<Self::Num>,
     ) -> PlineIntersectsCollection<Self::Num>
     where
@@ -1514,11 +1511,84 @@ pub trait PolylineRef {
     ) -> Vec<Self::OutputPolyline> {
         parallel_offset(self, offset, options)
     }
+    /// Perform a boolean `operation` between this polyline and another using default options.
+    ///
+    /// See [Polyline::boolean_opt] for more information.
+    ///
+    /// # Examples
+    /// ```
+    /// # use cavalier_contours::core::traits::*;
+    /// # use cavalier_contours::polyline::*;
+    /// # use cavalier_contours::pline_closed;
+    /// let rectangle = pline_closed![
+    ///     (-1.0, -2.0, 0.0),
+    ///     (3.0, -2.0, 0.0),
+    ///     (3.0, 2.0, 0.0),
+    ///     (-1.0, 2.0, 0.0),
+    /// ];
+    /// let circle = pline_closed![(0.0, 0.0, 1.0), (2.0, 0.0, 1.0)];
+    /// let results = rectangle.boolean(&circle, BooleanOp::Not);
+    /// // since the circle is inside the rectangle we get back 1 positive polyline and 1 negative
+    /// // polyline where the positive polyline is the rectangle and the negative polyline is the
+    /// // circle
+    /// assert_eq!(results.pos_plines.len(), 1);
+    /// assert_eq!(results.neg_plines.len(), 1);
+    /// assert!(results.pos_plines[0].pline.area().fuzzy_eq(rectangle.area()));
+    /// assert!(results.neg_plines[0].pline.area().fuzzy_eq(circle.area()));
+    /// ```
+    fn boolean<P>(&self, other: &P, operation: BooleanOp) -> BooleanResult<Self::OutputPolyline>
+    where
+        P: PolylineRef<Num = Self::Num>,
+    {
+        self.boolean_opt(other, operation, &Default::default())
+    }
+
+    /// Perform a boolean `operation` between this polyline and another with options provided.
+    ///
+    /// Returns the boolean result polylines and their associated slices that were stitched together
+    /// end to end to form them.
+    ///
+    /// # Examples
+    /// ```
+    /// # use cavalier_contours::core::traits::*;
+    /// # use cavalier_contours::polyline::*;
+    /// # use cavalier_contours::pline_closed;
+    /// let rectangle = pline_closed![
+    ///     (-1.0, -2.0, 0.0),
+    ///     (3.0, -2.0, 0.0),
+    ///     (3.0, 2.0, 0.0),
+    ///     (-1.0, 2.0, 0.0),
+    /// ];
+    /// let circle = pline_closed![(0.0, 0.0, 1.0), (2.0, 0.0, 1.0)];
+    /// let aabb_index = rectangle.create_approx_aabb_index().unwrap();
+    /// let options = PlineBooleanOptions {
+    ///     // passing in existing spatial index of the polyline segments for the first polyline
+    ///     pline1_aabb_index: Some(&aabb_index),
+    ///     ..Default::default()
+    /// };
+    /// let results = rectangle.boolean_opt(&circle, BooleanOp::Not, &options);
+    /// // since the circle is inside the rectangle we get back 1 positive polyline and 1 negative
+    /// // polyline where the positive polyline is the rectangle and the negative polyline is the
+    /// // circle
+    /// assert_eq!(results.pos_plines.len(), 1);
+    /// assert_eq!(results.neg_plines.len(), 1);
+    /// assert!(results.pos_plines[0].pline.area().fuzzy_eq(rectangle.area()));
+    /// assert!(results.neg_plines[0].pline.area().fuzzy_eq(circle.area()));
+    /// ```
+    fn boolean_opt<P>(
+        &self,
+        other: &P,
+        operation: BooleanOp,
+        options: &PlineBooleanOptions<Self::Num>,
+    ) -> BooleanResult<Self::OutputPolyline>
+    where
+        P: PolylineRef<Num = Self::Num>,
+    {
+        polyline_boolean(self, other, operation, options)
+    }
 }
 
-pub trait PolylineRefMut<'a>: PolylineRef {
-    type VertexIterMut: Iterator<Item = &'a mut PlineVertex<Self::Num>> + 'a;
-
+pub trait PolylineRefMut: PolylineRef {
     /// Set the vertex data at a given index of the polyline.
     fn set_vertex(&mut self, index: usize, vertex: PlineVertex<Self::Num>);
 
@@ -1609,8 +1679,6 @@ pub trait PolylineRefMut<'a>: PolylineRef {
 
     fn set_is_closed(&mut self, is_closed: bool);
 
-    fn iter_vertexes_mut(&'a mut self) -> Self::VertexIterMut;
-
     /// Uniformly scale the polyline (mutably) in the xy plane by `scale_factor`.
     ///
     /// # Examples
@@ -1626,10 +1694,10 @@ pub trait PolylineRefMut<'a>: PolylineRef {
     /// expected.add(8.0, 8.0, 1.0);
     /// assert!(polyline.fuzzy_eq(&expected));
     /// ```
-    fn scale_mut(&'a mut self, scale_factor: Self::Num) {
-        for v in self.iter_vertexes_mut() {
-            v.x = scale_factor * v.x;
-            v.y = scale_factor * v.y;
+    fn scale_mut(&mut self, scale_factor: Self::Num) {
+        for i in 0..self.vertex_count() {
+            let v = self.at(i);
+            self.set(i, scale_factor * v.x, scale_factor * v.y, v.bulge);
         }
     }
 
@@ -1648,10 +1716,10 @@ pub trait PolylineRefMut<'a>: PolylineRef {
     /// expected.add(1.0, 5.0, 1.0);
     /// assert!(polyline.fuzzy_eq(&expected));
     /// ```
-    fn translate_mut(&'a mut self, x: Self::Num, y: Self::Num) {
-        for v in self.iter_vertexes_mut() {
-            v.x = v.x + x;
-            v.y = v.y + y;
+    fn translate_mut(&mut self, x: Self::Num, y: Self::Num) {
+        for i in 0..self.vertex_count() {
+            let v = self.at(i);
+            self.set(i, v.x + x, v.y + y, v.bulge);
         }
     }
 
@@ -1690,12 +1758,19 @@ pub trait PolylineRefMut<'a>: PolylineRef {
     }
 }
 
-pub trait PolylineCreation: Sized {
-    type Num: Real;
+pub trait PolylineCreation: PolylineRefMut + Sized {
     fn with_capacity(capacity: usize, is_closed: bool) -> Self;
     fn from_iter<I>(iter: I, is_closed: bool) -> Self
     where
         I: Iterator<Item = PlineVertex<Self::Num>>;
+
+    #[inline]
+    fn clone_from<P>(pline: &P) -> Self
+    where
+        P: PolylineRef<Num = Self::Num> + ?Sized,
+    {
+        Self::from_iter(pline.iter_vertexes(), pline.is_closed())
+    }
 
     /// Create empty polyline with `is_closed` set to false.
     #[inline]
@@ -1786,8 +1861,6 @@ impl<T> PolylineCreation for Polyline<T>
 where
     T: Real,
 {
-    type Num = T;
-
     #[inline]
     fn with_capacity(capacity: usize, is_closed: bool) -> Self {
         Polyline {
@@ -1808,12 +1881,10 @@ where
     }
 }
 
-impl<'a, T> PolylineRefMut<'a> for Polyline<T>
+impl<T> PolylineRefMut for Polyline<T>
 where
     T: Real,
 {
-    type VertexIterMut = std::slice::IterMut<'a, PlineVertex<Self::Num>>;
-
     #[inline]
     fn set_vertex(&mut self, index: usize, vertex: PlineVertex<Self::Num>) {
         self.vertex_data[index] = vertex;
@@ -1847,11 +1918,6 @@ where
     #[inline]
     fn set_is_closed(&mut self, is_closed: bool) {
         self.is_closed = is_closed;
-    }
-
-    #[inline]
-    fn iter_vertexes_mut(&'a mut self) -> Self::VertexIterMut {
-        self.vertex_data.iter_mut()
     }
 
     #[inline]

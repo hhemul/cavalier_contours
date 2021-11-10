@@ -7,7 +7,7 @@ use crate::{
     polyline::{
         pline_seg_intr, seg_fast_approx_bounding_box, seg_split_at_point, seg_tangent_vector,
         FindIntersectsOptions, PlineBasicIntersect, PlineIntersectVisitor,
-        PlineIntersectsCollection, PlineOverlappingIntersect, PlineSegIntr, PlineVertex, Polyline,
+        PlineIntersectsCollection, PlineOverlappingIntersect, PlineSegIntr, PlineVertex,
         PolylineRef, PolylineSlice,
     },
 };
@@ -460,17 +460,21 @@ impl<T> OverlappingSlice<T>
 where
     T: Real,
 {
-    pub fn new(
-        pline1: &Polyline<T>,
-        pline2: &Polyline<T>,
+    pub fn new<P, R>(
+        pline1: &P,
+        pline2: &R,
         start_intr: &PlineOverlappingIntersect<T>,
         end_intr: Option<&PlineOverlappingIntersect<T>>,
         pos_equal_eps: T,
-    ) -> Self {
-        let start_v1 = pline1[start_intr.start_index1];
-        let start_v2 = pline1[pline1.next_wrapping_index(start_intr.start_index1)];
-        let start_u1 = pline2[start_intr.start_index2];
-        let start_u2 = pline2[pline2.next_wrapping_index(start_intr.start_index2)];
+    ) -> Self
+    where
+        P: PolylineRef<Num = T> + ?Sized,
+        R: PolylineRef<Num = T> + ?Sized,
+    {
+        let start_v1 = pline1.at(start_intr.start_index1);
+        let start_v2 = pline1.at(pline1.next_wrapping_index(start_intr.start_index1));
+        let start_u1 = pline2.at(start_intr.start_index2);
+        let start_u2 = pline2.at(pline2.next_wrapping_index(start_intr.start_index2));
         let opposing_directions = {
             // tangent vectors are either going same direction or opposite direction, just test dot
             // product sign to determine if going same direction
@@ -527,7 +531,7 @@ where
                         end_indexes: start_indexes,
                         end_index_offset: pline2.vertex_count() - 1,
                         updated_start: start_u1,
-                        updated_end_bulge: pline2[pline2.vertex_count() - 1].bulge,
+                        updated_end_bulge: pline2.at(pline2.vertex_count() - 1).bulge,
                         end_point: end_intr.point2,
                         is_loop: true,
                         opposing_directions,
@@ -589,8 +593,9 @@ where
                         };
 
                         let updated_end = {
-                            let end_u1 = pline2[end_intr.start_index2];
-                            let end_u2 = pline2[pline2.next_wrapping_index(end_intr.start_index2)];
+                            let end_u1 = pline2.at(end_intr.start_index2);
+                            let end_u2 =
+                                pline2.at(pline2.next_wrapping_index(end_intr.start_index2));
 
                             let split1 =
                                 seg_split_at_point(end_u1, end_u2, end_intr.point1, pos_equal_eps);
@@ -660,13 +665,15 @@ where
 ///
 /// This function assumes the intersects given follow the convention that `point1` is closest to the
 /// pline2's segment start and `point2` is furthest from the start of pline2's segment start.
-pub fn sort_and_join_overlapping_intersects<T>(
+pub fn sort_and_join_overlapping_intersects<P, R, T>(
     intersects: &mut [PlineOverlappingIntersect<T>],
-    pline1: &Polyline<T>,
-    pline2: &Polyline<T>,
+    pline1: &P,
+    pline2: &R,
     pos_equal_eps: T,
 ) -> Vec<OverlappingSlice<T>>
 where
+    P: PolylineRef<Num = T> + ?Sized,
+    R: PolylineRef<Num = T> + ?Sized,
     T: Real,
 {
     let mut result = Vec::new();
@@ -679,7 +686,7 @@ where
         intersects
             .iter()
             .all(|intr: &PlineOverlappingIntersect<T>| {
-                let start = pline2[intr.start_index2].pos();
+                let start = pline2.at(intr.start_index2).pos();
                 let dist1 = dist_squared(start, intr.point1);
                 let dist2 = dist_squared(start, intr.point2);
                 dist1 <= dist2
@@ -692,7 +699,7 @@ where
     intersects.sort_unstable_by(|intr_a, intr_b| {
         intr_a.start_index2.cmp(&intr_b.start_index2).then_with(|| {
             // equal start_index2 so sort by distance from start
-            let start = pline2[intr_a.start_index2].pos();
+            let start = pline2.at(intr_a.start_index2).pos();
             let dist1 = dist_squared(start, intr_a.point1);
             let dist2 = dist_squared(start, intr_b.point1);
             dist1.partial_cmp(&dist2).unwrap()
@@ -738,7 +745,7 @@ where
 
             if last_slice
                 .end_point
-                .fuzzy_eq_eps(pline2[0].pos(), pos_equal_eps)
+                .fuzzy_eq_eps(pline2.at(0).pos(), pos_equal_eps)
             {
                 // add one to offset to capture pline2[0] vertex (it is at point of connection)
                 first_slice.end_index_offset += 1;
@@ -754,7 +761,7 @@ mod local_self_intersect_tests {
     use super::*;
     use crate::{
         core::math::bulge_from_angle,
-        polyline::{PlineIntersect, PolylineRefMut},
+        polyline::{PlineIntersect, Polyline, PolylineRefMut},
     };
 
     fn local_self_intersects<T>(
@@ -855,7 +862,7 @@ mod global_self_intersect_tests {
     use super::*;
     use crate::{
         core::math::bulge_from_angle,
-        polyline::{PlineIntersect, PolylineRefMut},
+        polyline::{PlineIntersect, Polyline, PolylineRefMut},
     };
 
     fn global_self_intersects<T>(
@@ -959,7 +966,7 @@ mod global_self_intersect_tests {
 
 #[cfg(test)]
 mod find_intersects_tests {
-    use crate::polyline::PolylineRefMut;
+    use crate::polyline::{Polyline, PolylineRefMut};
 
     use super::*;
 
@@ -1147,7 +1154,7 @@ mod sort_and_join_overlapping_intersects_tests {
     use super::*;
     use crate::core::math::bulge_from_angle;
     use crate::core::traits::FuzzyEq;
-    use crate::polyline::{PolylineCreation, PolylineRefMut};
+    use crate::polyline::{Polyline, PolylineCreation, PolylineRefMut};
 
     #[test]
     fn overlapping_circles_same_dir() {
