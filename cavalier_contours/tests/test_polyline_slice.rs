@@ -8,7 +8,10 @@ use cavalier_contours::{
         Control,
     },
     pline_closed, pline_open,
-    polyline::{seg_length, OpenPlineSlice, PlineVertex, Polyline, PolylineSlice},
+    polyline::{
+        seg_length, OpenPlineSlice, PlineVertex, Polyline, PolylineRef, PolylineRefMut,
+        PolylineSlice,
+    },
 };
 
 const POS_EQ_EPS: f64 = 1e-5;
@@ -29,7 +32,7 @@ fn from_slice_points_single_seg() {
         )
         .unwrap();
 
-        let pline_from_slice = slice.to_polyline(&pline, POS_EQ_EPS);
+        let pline_from_slice: Polyline = slice.to_polyline(&pline, POS_EQ_EPS);
         assert_fuzzy_eq!(&pline_from_slice, &pline);
     }
 
@@ -45,7 +48,7 @@ fn from_slice_points_single_seg() {
         )
         .unwrap();
 
-        let pline_from_slice = slice.to_polyline(&pline, POS_EQ_EPS);
+        let pline_from_slice: Polyline = slice.to_polyline(&pline, POS_EQ_EPS);
         assert_fuzzy_eq!(&pline_from_slice, &pline);
     }
 
@@ -61,7 +64,7 @@ fn from_slice_points_single_seg() {
         )
         .unwrap();
 
-        let pline_from_slice = slice.to_polyline(&pline, POS_EQ_EPS);
+        let pline_from_slice: Polyline = slice.to_polyline(&pline, POS_EQ_EPS);
         let bulge = bulge_from_angle(FRAC_PI_2);
         let expected_result = pline_open![(0.0, 0.0, bulge), (0.5, -0.5, 0.0)];
         assert_fuzzy_eq!(&pline_from_slice, &expected_result);
@@ -79,7 +82,7 @@ fn from_slice_points_single_seg() {
         )
         .unwrap();
 
-        let pline_from_slice = slice.to_polyline(&pline, POS_EQ_EPS);
+        let pline_from_slice: Polyline = slice.to_polyline(&pline, POS_EQ_EPS);
         let bulge = bulge_from_angle(FRAC_PI_2);
         let expected_result = pline_open![(0.5, -0.5, bulge), (1.0, 0.0, 0.0)];
         assert_fuzzy_eq!(&pline_from_slice, &expected_result);
@@ -97,7 +100,7 @@ fn from_slice_points_single_seg() {
         )
         .unwrap();
 
-        let pline_from_slice = slice.to_polyline(&pline, POS_EQ_EPS);
+        let pline_from_slice: Polyline = slice.to_polyline(&pline, POS_EQ_EPS);
         let bulge = bulge_from_angle(FRAC_PI_2);
         let expected_result = pline_open![(0.5, -0.5, bulge), (1.0, 0.0, 0.0)];
         assert_fuzzy_eq!(&pline_from_slice, &expected_result);
@@ -111,7 +114,7 @@ fn from_slice_points_single_seg() {
             OpenPlineSlice::from_slice_points(&pline, start_point, 0, end_point, 0, POS_EQ_EPS)
                 .unwrap();
 
-        let pline_from_slice = slice.to_polyline(&pline, POS_EQ_EPS);
+        let pline_from_slice: Polyline = slice.to_polyline(&pline, POS_EQ_EPS);
         let bulge = bulge_from_angle(FRAC_PI_3);
         let expected_result = {
             let mut p = Polyline::new();
@@ -167,7 +170,7 @@ fn from_slice_points_multi_seg() {
         )
         .unwrap();
 
-        let pline_from_slice = slice.to_polyline(&pline, POS_EQ_EPS);
+        let pline_from_slice: Polyline = slice.to_polyline(&pline, POS_EQ_EPS);
         assert_fuzzy_eq!(&pline_from_slice, &pline);
     }
 
@@ -183,7 +186,7 @@ fn from_slice_points_multi_seg() {
         )
         .unwrap();
 
-        let pline_from_slice = slice.to_polyline(&pline, POS_EQ_EPS);
+        let pline_from_slice: Polyline = slice.to_polyline(&pline, POS_EQ_EPS);
         assert_fuzzy_eq!(&pline_from_slice, &pline);
     }
 
@@ -199,7 +202,7 @@ fn from_slice_points_multi_seg() {
         )
         .unwrap();
 
-        let pline_from_slice = slice.to_polyline(&pline, POS_EQ_EPS);
+        let pline_from_slice: Polyline = slice.to_polyline(&pline, POS_EQ_EPS);
         let bulge = bulge_from_angle(FRAC_PI_2);
         let expected_result = pline_open![(0.0, 0.0, bulge), (0.5, -0.5, 0.0)];
         assert_fuzzy_eq!(&pline_from_slice, &expected_result);
@@ -217,7 +220,7 @@ fn from_slice_points_multi_seg() {
         )
         .unwrap();
 
-        let pline_from_slice = slice.to_polyline(&pline, POS_EQ_EPS);
+        let pline_from_slice: Polyline = slice.to_polyline(&pline, POS_EQ_EPS);
         let bulge = bulge_from_angle(FRAC_PI_2);
         let expected_result = pline_open![(0.5, -0.5, bulge), (1.0, 0.0, 0.0)];
         assert_fuzzy_eq!(&pline_from_slice, &expected_result);
@@ -235,7 +238,7 @@ fn from_slice_points_multi_seg() {
         )
         .unwrap();
 
-        let pline_from_slice = slice.to_polyline(&pline, POS_EQ_EPS);
+        let pline_from_slice: Polyline = slice.to_polyline(&pline, POS_EQ_EPS);
         let expected_result = pline_open![(0.0, 0.0, 1.0), (1.0, 0.0, 0.0)];
         assert_fuzzy_eq!(&pline_from_slice, &expected_result);
     }
@@ -252,7 +255,7 @@ fn from_slice_points_multi_seg() {
         )
         .unwrap();
 
-        let pline_from_slice = slice.to_polyline(&pline, POS_EQ_EPS);
+        let pline_from_slice: Polyline = slice.to_polyline(&pline, POS_EQ_EPS);
         let expected_result = pline_open![(0.0, 0.0, 1.0), (1.0, 0.0, 0.0), (1.0, 0.5, 0.0)];
         assert_fuzzy_eq!(&pline_from_slice, &expected_result);
     }
@@ -269,7 +272,7 @@ fn from_slice_points_multi_seg() {
         )
         .unwrap();
 
-        let pline_from_slice = slice.to_polyline(&pline, POS_EQ_EPS);
+        let pline_from_slice: Polyline = slice.to_polyline(&pline, POS_EQ_EPS);
         let expected_result = pline_open![(1.0, 0.0, 0.0), (1.0, 0.5, 0.0)];
         assert_fuzzy_eq!(&pline_from_slice, &expected_result);
     }
@@ -286,7 +289,7 @@ fn from_slice_points_multi_seg() {
         )
         .unwrap();
 
-        let pline_from_slice = slice.to_polyline(&pline, POS_EQ_EPS);
+        let pline_from_slice: Polyline = slice.to_polyline(&pline, POS_EQ_EPS);
         let expected_result = pline_open![(1.0, 0.0, 0.0), (1.0, 0.5, 0.0)];
         assert_fuzzy_eq!(&pline_from_slice, &expected_result);
     }
@@ -303,7 +306,7 @@ fn from_slice_points_multi_seg() {
         )
         .unwrap();
 
-        let pline_from_slice = slice.to_polyline(&pline, POS_EQ_EPS);
+        let pline_from_slice: Polyline = slice.to_polyline(&pline, POS_EQ_EPS);
         let bulge = bulge_from_angle(FRAC_PI_2);
         let expected_result = pline_open![(0.5, -0.5, bulge), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)];
         assert_fuzzy_eq!(&pline_from_slice, &expected_result);
@@ -321,7 +324,7 @@ fn from_slice_points_multi_seg() {
         )
         .unwrap();
 
-        let pline_from_slice = slice.to_polyline(&pline, POS_EQ_EPS);
+        let pline_from_slice: Polyline = slice.to_polyline(&pline, POS_EQ_EPS);
         let bulge = bulge_from_angle(FRAC_PI_2);
         let expected_result = pline_open![
             (1.0, 0.5, 0.0),

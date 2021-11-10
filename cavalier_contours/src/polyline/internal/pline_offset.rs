@@ -11,7 +11,7 @@ use crate::{
         internal::pline_intersects::{all_self_intersects_as_basic, find_intersects},
         pline_seg_intr, seg_arc_radius_and_center, seg_closest_point, seg_fast_approx_bounding_box,
         seg_midpoint, FindIntersectsOptions, OpenPlineSlice, PlineOffsetOptions, PlineSegIntr,
-        PlineVertex, Polyline, PolylineSlice,
+        PlineVertex, Polyline, PolylineCreation, PolylineRef, PolylineRefMut, PolylineSlice,
     },
 };
 use core::panic;
@@ -31,25 +31,21 @@ where
 }
 
 /// Create all the raw parallel offset segments of a polyline using the `offset` value given.
-pub fn create_untrimmed_raw_offset_segs<T>(
-    polyline: &Polyline<T>,
+pub fn create_untrimmed_raw_offset_segs<'a, P, T>(
+    polyline: &'a P,
     offset: T,
 ) -> Vec<RawPlineOffsetSeg<T>>
 where
+    P: PolylineRef<'a, Num = T> + ?Sized,
     T: Real,
 {
     let mut result = Vec::new();
-    let ln = polyline.len();
-    if ln < 2 {
+    let seg_count = polyline.segment_count();
+    if seg_count == 0 {
         return result;
     }
 
-    let segment_count = if polyline.is_closed() {
-        polyline.len()
-    } else {
-        polyline.len() - 1
-    };
-    result.reserve(segment_count);
+    result.reserve(seg_count);
 
     let process_line_seg = |v1: PlineVertex<T>, v2: PlineVertex<T>| -> RawPlineOffsetSeg<T> {
         let line_v = v2.pos() - v1.pos();
@@ -126,14 +122,15 @@ where
 /// Connect two raw offset segments by joining them with an arc and push the vertexes to the
 /// `result` output parameter.
 #[inline]
-fn connect_using_arc<T>(
+fn connect_using_arc<T, O>(
     s1: &RawPlineOffsetSeg<T>,
     s2: &RawPlineOffsetSeg<T>,
     connection_arcs_ccw: bool,
-    result: &mut Polyline<T>,
+    result: &mut O,
     pos_equal_eps: T,
 ) where
     T: Real,
+    O: for<'a> PolylineRefMut<'a, Num = T>,
 {
     let arc_center = s1.orig_v2_pos;
     let sp = s1.v2.pos();
@@ -152,13 +149,14 @@ struct JoinParams<T> {
 }
 
 /// Join two adjacent raw offset segments where both segments are lines.
-fn line_line_join<T>(
+fn line_line_join<T, O>(
     s1: &RawPlineOffsetSeg<T>,
     s2: &RawPlineOffsetSeg<T>,
     params: &JoinParams<T>,
-    result: &mut Polyline<T>,
+    result: &mut O,
 ) where
     T: Real,
+    O: for<'a> PolylineRefMut<'a, Num = T>,
 {
     let connection_arcs_ccw = params.connection_arcs_ccw;
     let pos_equal_eps = params.pos_equal_eps;
@@ -210,13 +208,14 @@ fn line_line_join<T>(
 }
 
 /// Join two adjacent raw offset segments where the first segment is a line and the second is a arc.
-fn line_arc_join<T>(
+fn line_arc_join<T, O>(
     s1: &RawPlineOffsetSeg<T>,
     s2: &RawPlineOffsetSeg<T>,
     params: &JoinParams<T>,
-    result: &mut Polyline<T>,
+    result: &mut O,
 ) where
     T: Real,
+    O: for<'a> PolylineRefMut<'a, Num = T>,
 {
     let connection_arcs_ccw = params.connection_arcs_ccw;
     let pos_equal_eps = params.pos_equal_eps;
@@ -296,13 +295,14 @@ fn line_arc_join<T>(
 }
 
 /// Join two adjacent raw offset segments where the first segment is a arc and the second is a line.
-fn arc_line_join<T>(
+fn arc_line_join<T, O>(
     s1: &RawPlineOffsetSeg<T>,
     s2: &RawPlineOffsetSeg<T>,
     params: &JoinParams<T>,
-    result: &mut Polyline<T>,
+    result: &mut O,
 ) where
     T: Real,
+    O: for<'a> PolylineRefMut<'a, Num = T>,
 {
     let connection_arcs_ccw = params.connection_arcs_ccw;
     let pos_equal_eps = params.pos_equal_eps;
@@ -330,7 +330,7 @@ fn arc_line_join<T>(
             {
                 // modify previous bulge and trim at intersect
                 let a = angle(arc_center, intersect);
-                let (_, prev_arc_center) = seg_arc_radius_and_center(*prev_vertex, *v2);
+                let (_, prev_arc_center) = seg_arc_radius_and_center(prev_vertex, *v2);
                 let prev_arc_start_angle = angle(prev_arc_center, prev_vertex.pos());
                 let updated_prev_theta = delta_angle(prev_arc_start_angle, a);
                 // ensure the sign matches (may get flipped if intersect is at the very end of the
@@ -376,13 +376,14 @@ fn arc_line_join<T>(
 }
 
 /// Join two adjacent raw offset segments where both segments are arcs.
-fn arc_arc_join<T>(
+fn arc_arc_join<T, O>(
     s1: &RawPlineOffsetSeg<T>,
     s2: &RawPlineOffsetSeg<T>,
     params: &JoinParams<T>,
-    result: &mut Polyline<T>,
+    result: &mut O,
 ) where
     T: Real,
+    O: for<'a> PolylineRefMut<'a, Num = T>,
 {
     let connection_arcs_ccw = params.connection_arcs_ccw;
     let pos_equal_eps = params.pos_equal_eps;
@@ -415,7 +416,7 @@ fn arc_arc_join<T>(
             {
                 // modify previous bulge and trim at intersect
                 let a1 = angle(arc1_center, intersect);
-                let (_, prev_arc_center) = seg_arc_radius_and_center(*prev_vertex, *v2);
+                let (_, prev_arc_center) = seg_arc_radius_and_center(prev_vertex, *v2);
                 let prev_arc_start_angle = angle(prev_arc_center, prev_vertex.pos());
                 let updated_prev_theta = delta_angle(prev_arc_start_angle, a1);
                 // ensure the sign matches (may get flipped if intersect is at the very end of the
@@ -478,26 +479,25 @@ fn arc_arc_join<T>(
     }
 }
 
-pub fn create_raw_offset_polyline<T>(
-    polyline: &Polyline<T>,
-    offset: T,
-    pos_equal_eps: T,
-) -> Polyline<T>
+pub fn create_raw_offset_polyline<'a, P, T, O>(polyline: &'a P, offset: T, pos_equal_eps: T) -> O
 where
+    P: PolylineRef<'a, Num = T> + ?Sized,
     T: Real,
+    O: for<'b> PolylineRefMut<'b, Num = T> + PolylineCreation,
 {
-    if polyline.len() < 2 {
-        return Polyline::new();
+    let vc = polyline.vertex_count();
+    if vc < 2 {
+        return O::empty();
     }
 
     let raw_offset_segs = create_untrimmed_raw_offset_segs(polyline, offset);
     if raw_offset_segs.is_empty() {
-        return Polyline::new();
+        return O::empty();
     }
 
     // detect single collapsed arc segment
     if raw_offset_segs.len() == 1 && raw_offset_segs[0].collapsed_arc {
-        return Polyline::new();
+        return O::empty();
     }
 
     let connection_arcs_ccw = offset < T::zero();
@@ -506,19 +506,18 @@ where
         pos_equal_eps,
     };
 
-    let join_seg_pair =
-        |s1: &RawPlineOffsetSeg<T>, s2: &RawPlineOffsetSeg<T>, result: &mut Polyline<T>| {
-            let s1_is_line = s1.v1.bulge_is_zero();
-            let s2_is_line = s2.v1.bulge_is_zero();
-            match (s1_is_line, s2_is_line) {
-                (true, true) => line_line_join(s1, s2, &join_params, result),
-                (true, false) => line_arc_join(s1, s2, &join_params, result),
-                (false, true) => arc_line_join(s1, s2, &join_params, result),
-                (false, false) => arc_arc_join(s1, s2, &join_params, result),
-            }
-        };
+    let join_seg_pair = |s1: &RawPlineOffsetSeg<T>, s2: &RawPlineOffsetSeg<T>, result: &mut O| {
+        let s1_is_line = s1.v1.bulge_is_zero();
+        let s2_is_line = s2.v1.bulge_is_zero();
+        match (s1_is_line, s2_is_line) {
+            (true, true) => line_line_join(s1, s2, &join_params, result),
+            (true, false) => line_arc_join(s1, s2, &join_params, result),
+            (false, true) => arc_line_join(s1, s2, &join_params, result),
+            (false, false) => arc_arc_join(s1, s2, &join_params, result),
+        }
+    };
 
-    let mut result = Polyline::with_capacity(polyline.len(), polyline.is_closed());
+    let mut result = O::with_capacity(vc, polyline.is_closed());
 
     // add the very first vertex
     result.add_vertex(raw_offset_segs.first().unwrap().v1);
@@ -530,50 +529,50 @@ where
         join_seg_pair(s1, s2, &mut result);
     }
 
-    let first_vertex_replaced = result.len() == 1;
+    let first_vertex_replaced = result.vertex_count() == 1;
 
     while let Some([s1, s2]) = offset_seg_pairs.next() {
         join_seg_pair(s1, s2, &mut result);
     }
 
-    if polyline.is_closed() && result.len() > 1 {
+    if polyline.is_closed() && result.vertex_count() > 1 {
         // join closing segments at vertex indexes (n, 0) and (0, 1)
         let s1 = &raw_offset_segs.last().unwrap();
         let s2 = &raw_offset_segs[0];
 
         // temp polyline to capture results of joining (to avoid mutating result)
-        let mut closing_part_result = Polyline::new();
-        closing_part_result.add_vertex(*result.last().unwrap());
+        let mut closing_part_result = O::empty();
+        closing_part_result.add_vertex(result.last().unwrap());
         join_seg_pair(s1, s2, &mut closing_part_result);
 
         // update last vertexes
-        *result.last_mut().unwrap() = closing_part_result[0];
-        for v in closing_part_result.iter().skip(1) {
-            result.add_vertex(*v);
+        *result.last_mut().unwrap() = closing_part_result.at(0);
+        for v in closing_part_result.iter_vertexes().skip(1) {
+            result.add_vertex(v);
         }
 
         // update first vertex (only if it has not already been updated/replaced)
         if !first_vertex_replaced {
             let updated_first_pos = closing_part_result.last().unwrap().pos();
-            if result[0].bulge_is_zero() {
+            if result.at(0).bulge_is_zero() {
                 // just update position
-                result[0].x = updated_first_pos.x;
-                result[0].y = updated_first_pos.y;
-            } else if result.len() > 1 {
+                let b = result.at(0).bulge;
+                result.set(0, updated_first_pos.x, updated_first_pos.y, b);
+            } else if result.vertex_count() > 1 {
                 // update position and bulge
-                let (_, arc_center) = seg_arc_radius_and_center(result[0], result[1]);
+                let (_, arc_center) = seg_arc_radius_and_center(result.at(0), result.at(1));
                 let a1 = angle(arc_center, updated_first_pos);
-                let a2 = angle(arc_center, result[1].pos());
+                let a2 = angle(arc_center, result.at(1).pos());
                 let updated_theta = delta_angle(a1, a2);
-                if (updated_theta < T::zero() && result[0].bulge_is_pos())
-                    || (updated_theta > T::zero() && result[0].bulge_is_neg())
+                if (updated_theta < T::zero() && result.at(0).bulge_is_pos())
+                    || (updated_theta > T::zero() && result.at(0).bulge_is_neg())
                 {
                     // first vertex not valid, just update its position (it will be removed later)
-                    result[0].x = updated_first_pos.x;
-                    result[0].y = updated_first_pos.y;
+                    let b = result.at(0).bulge;
+                    result.set(0, updated_first_pos.x, updated_first_pos.y, b);
                 } else {
                     // update position and bulge
-                    result.set_vertex(
+                    result.set(
                         0,
                         updated_first_pos.x,
                         updated_first_pos.y,
@@ -585,15 +584,21 @@ where
 
         // must do final singularity prune between last, first, and second vertex because after
         // joining segments (n, 0) and (0, 1) they may have been introduced
-        if result.len() > 1 {
-            if result[0]
+        if result.vertex_count() > 1 {
+            if result
+                .at(0)
                 .pos()
                 .fuzzy_eq_eps(result.last().unwrap().pos(), pos_equal_eps)
             {
                 result.remove_last();
             }
 
-            if result.len() > 1 && result[0].pos().fuzzy_eq_eps(result[1].pos(), pos_equal_eps) {
+            if result.vertex_count() > 1
+                && result
+                    .at(0)
+                    .pos()
+                    .fuzzy_eq_eps(result.at(1).pos(), pos_equal_eps)
+            {
                 result.remove(0);
             }
         }
@@ -604,7 +609,7 @@ where
     }
 
     // if due to joining of segments we are left with only 1 vertex then return empty polyline
-    if result.len() == 1 {
+    if result.vertex_count() == 1 {
         result.clear();
     }
 
@@ -612,8 +617,8 @@ where
 }
 
 #[inline]
-fn point_valid_for_offset<T>(
-    polyline: &Polyline<T>,
+fn point_valid_for_offset<'a, P, T>(
+    polyline: &'a P,
     offset: T,
     aabb_index: &StaticAABB2DIndex<T>,
     point: Vector2<T>,
@@ -621,6 +626,7 @@ fn point_valid_for_offset<T>(
     offset_tol: T,
 ) -> bool
 where
+    P: PolylineRef<'a, Num = T> + ?Sized,
     T: Real,
 {
     let abs_offset = offset.abs() - offset_tol;
@@ -628,7 +634,7 @@ where
     let mut point_valid = true;
     let mut visitor = |i: usize| {
         let j = polyline.next_wrapping_index(i);
-        let closest_point = seg_closest_point(polyline[i], polyline[j], point);
+        let closest_point = seg_closest_point(polyline.at(i), polyline.at(j), point);
         let dist = dist_squared(closest_point, point);
         point_valid = dist > min_dist;
         if point_valid {
@@ -649,14 +655,16 @@ where
     point_valid
 }
 
-pub fn slices_from_raw_offset<T>(
-    original_polyline: &Polyline<T>,
-    raw_offset_polyline: &Polyline<T>,
+pub fn slices_from_raw_offset<'a, 'b, P, R, T>(
+    original_polyline: &'a P,
+    raw_offset_polyline: &'b R,
     orig_polyline_index: &StaticAABB2DIndex<T>,
     offset: T,
     options: &PlineOffsetOptions<T>,
 ) -> Vec<OpenPlineSlice<T>>
 where
+    P: PolylineRef<'a, Num = T> + ?Sized,
+    R: PolylineRef<'b, Num = T> + ?Sized,
     T: Real,
 {
     debug_assert!(
@@ -665,7 +673,7 @@ where
     );
 
     let mut result = Vec::new();
-    if raw_offset_polyline.len() < 2 {
+    if raw_offset_polyline.vertex_count() < 2 {
         return result;
     }
 
@@ -683,7 +691,7 @@ where
             original_polyline,
             offset,
             orig_polyline_index,
-            raw_offset_polyline[0].pos(),
+            raw_offset_polyline.at(0).pos(),
             &mut query_stack,
             offset_dist_eps,
         ) {
@@ -714,7 +722,7 @@ where
 
     // sort intersects by distance from segment start vertex
     for (&i, intr_list) in intersects_lookup.iter_mut() {
-        let start_pos = raw_offset_polyline[i].pos();
+        let start_pos = raw_offset_polyline.at(i).pos();
         intr_list.sort_unstable_by(|&si1, &si2| {
             let dist1 = dist_squared(si1, start_pos);
             let dist2 = dist_squared(si2, start_pos);
@@ -729,7 +737,7 @@ where
             let mut visitor = |i: usize| {
                 let j = original_polyline.next_wrapping_index(i);
                 has_intersect = !matches!(
-                    pline_seg_intr(v1, v2, original_polyline[i], original_polyline[j]),
+                    pline_seg_intr(v1, v2, original_polyline.at(i), original_polyline.at(j)),
                     PlineSegIntr::NoIntersect
                 );
                 if has_intersect {
@@ -786,7 +794,7 @@ where
         // the slice
         let start_seg_midpoint = seg_midpoint(
             slice.updated_start,
-            raw_offset_polyline[raw_offset_polyline.next_wrapping_index(slice.start_index)],
+            raw_offset_polyline.at(raw_offset_polyline.next_wrapping_index(slice.start_index)),
         );
 
         if !point_valid_dist(start_seg_midpoint, query_stack) {
@@ -796,7 +804,9 @@ where
         let end_index =
             raw_offset_polyline.fwd_wrapping_index(slice.start_index, slice.end_index_offset);
         let end_seg_midpoint = seg_midpoint(
-            raw_offset_polyline[end_index].with_bulge(slice.updated_end_bulge),
+            raw_offset_polyline
+                .at(end_index)
+                .with_bulge(slice.updated_end_bulge),
             PlineVertex::from_vector2(slice.end_point, T::zero()),
         );
 
@@ -881,14 +891,15 @@ where
 }
 
 /// Adds circle intersects to the `intersect_lookups` given.
-fn visit_circle_intersects<T, F>(
-    pline: &Polyline<T>,
+fn visit_circle_intersects<'a, P, T, F>(
+    pline: &'a P,
     circle_center: Vector2<T>,
     circle_radius: T,
     aabb_index: &StaticAABB2DIndex<T>,
     visitor: &mut F,
     options: &PlineOffsetOptions<T>,
 ) where
+    P: PolylineRef<'a, Num = T> + ?Sized,
     T: Real,
     F: FnMut(usize, Vector2<T>),
 {
@@ -918,8 +929,8 @@ fn visit_circle_intersects<T, F>(
     );
 
     for start_index in query_results {
-        let v1 = pline[start_index];
-        let v2 = pline[pline.next_wrapping_index(start_index)];
+        let v1 = pline.at(start_index);
+        let v2 = pline.at(pline.next_wrapping_index(start_index));
         if v1.bulge_is_zero() {
             match line_circle_intr(v1.pos(), v2.pos(), circle_radius, circle_center) {
                 LineCircleIntr::NoIntersect => {}
@@ -960,19 +971,21 @@ fn visit_circle_intersects<T, F>(
     }
 }
 
-pub fn slices_from_dual_raw_offsets<T>(
-    original_polyline: &Polyline<T>,
-    raw_offset_polyline: &Polyline<T>,
-    dual_raw_offset_polyline: &Polyline<T>,
+pub fn slices_from_dual_raw_offsets<'a, 'b, P, R, T>(
+    original_polyline: &'a P,
+    raw_offset_polyline: &'b R,
+    dual_raw_offset_polyline: &'b R,
     orig_polyline_index: &StaticAABB2DIndex<T>,
     offset: T,
     options: &PlineOffsetOptions<T>,
 ) -> Vec<OpenPlineSlice<T>>
 where
+    P: PolylineRef<'a, Num = T> + ?Sized,
+    R: PolylineRef<'b, Num = T> + ?Sized,
     T: Real,
 {
     let mut result = Vec::new();
-    if raw_offset_polyline.len() < 2 {
+    if raw_offset_polyline.vertex_count() < 2 {
         return result;
     }
 
@@ -1010,7 +1023,7 @@ where
         let circle_radius = offset.abs();
         visit_circle_intersects(
             raw_offset_polyline,
-            original_polyline[0].pos(),
+            original_polyline.at(0).pos(),
             circle_radius,
             &raw_offset_index,
             &mut add_intr,
@@ -1047,7 +1060,7 @@ where
             original_polyline,
             offset,
             orig_polyline_index,
-            raw_offset_polyline[0].pos(),
+            raw_offset_polyline.at(0).pos(),
             &mut query_stack,
             offset_dist_eps,
         ) {
@@ -1062,7 +1075,7 @@ where
 
     // sort intersects by distance from segment start vertex
     for (&i, intr_list) in intersects_lookup.iter_mut() {
-        let start_pos = raw_offset_polyline[i].pos();
+        let start_pos = raw_offset_polyline.at(i).pos();
         intr_list.sort_unstable_by(|&si1, &si2| {
             let dist1 = dist_squared(si1, start_pos);
             let dist2 = dist_squared(si2, start_pos);
@@ -1077,7 +1090,7 @@ where
             let mut visitor = |i: usize| {
                 let j = original_polyline.next_wrapping_index(i);
                 has_intersect = !matches!(
-                    pline_seg_intr(v1, v2, original_polyline[i], original_polyline[j]),
+                    pline_seg_intr(v1, v2, original_polyline.at(i), original_polyline.at(j)),
                     PlineSegIntr::NoIntersect
                 );
                 if has_intersect {
@@ -1134,7 +1147,7 @@ where
         // the slice
         let start_seg_midpoint = seg_midpoint(
             slice.updated_start,
-            raw_offset_polyline[raw_offset_polyline.next_wrapping_index(slice.start_index)],
+            raw_offset_polyline.at(raw_offset_polyline.next_wrapping_index(slice.start_index)),
         );
 
         if !point_valid_dist(start_seg_midpoint, query_stack) {
@@ -1144,7 +1157,9 @@ where
         let end_index =
             raw_offset_polyline.fwd_wrapping_index(slice.start_index, slice.end_index_offset);
         let end_seg_midpoint = seg_midpoint(
-            raw_offset_polyline[end_index].with_bulge(slice.updated_end_bulge),
+            raw_offset_polyline
+                .at(end_index)
+                .with_bulge(slice.updated_end_bulge),
             PlineVertex::from_vector2(slice.end_point, T::zero()),
         );
 
@@ -1186,7 +1201,7 @@ where
         let intr = intr_list[0];
         let slice = OpenPlineSlice::from_slice_points(
             raw_offset_polyline,
-            raw_offset_polyline[0].pos(),
+            raw_offset_polyline.at(0).pos(),
             0,
             intr,
             *intr_idx,
@@ -1235,7 +1250,7 @@ where
                     *intr_list.last().unwrap(),
                     start_index,
                     raw_offset_polyline.last().unwrap().pos(),
-                    raw_offset_polyline.len() - 1,
+                    raw_offset_polyline.vertex_count() - 1,
                     pos_equal_eps,
                 );
                 if let Some(s) = slice {
@@ -1265,15 +1280,17 @@ where
     result
 }
 
-pub fn stitch_slices_together<T>(
-    raw_offset_pline: &Polyline<T>,
+pub fn stitch_slices_together<'a, P, T, O>(
+    raw_offset_pline: &'a P,
     slices: &[OpenPlineSlice<T>],
     is_closed: bool,
     orig_max_index: usize,
     options: &PlineOffsetOptions<T>,
-) -> Vec<Polyline<T>>
+) -> Vec<O>
 where
+    P: PolylineRef<'a, Num = T> + ?Sized,
     T: Real,
+    O: for<'b> PolylineRefMut<'b, Num = T> + PolylineCreation,
 {
     let mut result = Vec::new();
     if slices.is_empty() {
@@ -1284,10 +1301,11 @@ where
     let pos_equal_eps = options.pos_equal_eps;
 
     if slices.len() == 1 {
-        let mut pline = slices[0].to_polyline(raw_offset_pline, pos_equal_eps);
+        let mut pline: O = slices[0].to_polyline(raw_offset_pline, pos_equal_eps);
 
         if is_closed
-            && pline[0]
+            && pline
+                .at(0)
                 .pos()
                 .fuzzy_eq_eps(pline.last().unwrap().pos(), join_eps)
         {
@@ -1325,7 +1343,7 @@ where
 
         visited_indexes[i] = true;
 
-        let mut current_pline = Polyline::new();
+        let mut current_pline = O::empty();
         let mut current_index = i;
         let initial_start_point = slices[i].updated_start.pos();
         let mut loop_count = 0;
@@ -1384,8 +1402,8 @@ where
 
             if query_results.is_empty() {
                 // done stitching current polyline
-                if current_pline.len() > 1 {
-                    let current_pline_sp = current_pline[0].pos();
+                if current_pline.vertex_count() > 1 {
+                    let current_pline_sp = current_pline.at(0).pos();
                     let current_pline_ep = current_pline.last().unwrap().pos();
                     if is_closed && current_pline_sp.fuzzy_eq_eps(current_pline_ep, pos_equal_eps) {
                         current_pline.remove_last();
@@ -1407,19 +1425,21 @@ where
     result
 }
 
-pub fn parallel_offset<T>(
-    polyline: &Polyline<T>,
+pub fn parallel_offset<'a, P, T, O>(
+    polyline: &'a P,
     offset: T,
     options: &PlineOffsetOptions<T>,
-) -> Vec<Polyline<T>>
+) -> Vec<O>
 where
+    P: PolylineRef<'a, Num = T> + ?Sized,
     T: Real,
+    O: for<'b> PolylineRefMut<'b, Num = T> + PolylineCreation,
 {
-    if polyline.len() < 2 {
+    if polyline.vertex_count() < 2 {
         return Vec::new();
     }
     debug_assert!(
-        polyline.remove_repeat_pos(options.pos_equal_eps).len() == polyline.len(),
+        polyline.remove_repeat_pos(options.pos_equal_eps).is_none(),
         "bug: input assumed to not have repeat position vertexes"
     );
 
@@ -1431,12 +1451,18 @@ where
         &constructed_index
     };
 
-    let raw_offset = create_raw_offset_polyline(polyline, offset, options.pos_equal_eps);
+    let raw_offset: O = create_raw_offset_polyline(polyline, offset, options.pos_equal_eps);
     let result = if raw_offset.is_empty() {
         Vec::new()
     } else if polyline.is_closed() && !options.handle_self_intersects {
         let slices = slices_from_raw_offset(polyline, &raw_offset, index, offset, options);
-        stitch_slices_together(&raw_offset, &slices, true, raw_offset.len() - 1, options)
+        stitch_slices_together(
+            &raw_offset,
+            &slices,
+            true,
+            raw_offset.vertex_count() - 1,
+            options,
+        )
     } else {
         let dual_raw_offset = create_raw_offset_polyline(polyline, -offset, options.pos_equal_eps);
         let slices = slices_from_dual_raw_offsets(
@@ -1452,7 +1478,7 @@ where
             &raw_offset,
             &slices,
             polyline.is_closed(),
-            raw_offset.len(),
+            raw_offset.vertex_count(),
             options,
         )
     };
@@ -1460,7 +1486,7 @@ where
     debug_assert!(
         result
             .iter()
-            .all(|p| p.remove_repeat_pos(options.pos_equal_eps).len() == p.len()),
+            .all(|p: &O| p.remove_repeat_pos(options.pos_equal_eps).is_none()),
         "bug: result should never have repeat position vertexes"
     );
 

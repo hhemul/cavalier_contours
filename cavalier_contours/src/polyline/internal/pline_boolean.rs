@@ -3,7 +3,7 @@ use crate::{
     polyline::{
         seg_midpoint, seg_split_at_point, BooleanOp, BooleanPlineSlice, BooleanResult,
         BooleanResultPline, FindIntersectsOptions, OpenPlineSlice, PlineBasicIntersect,
-        PlineBooleanOptions, PolylineSlice,
+        PlineBooleanOptions, PolylineRef, PolylineRefMut, PolylineSlice,
     },
 };
 use std::collections::BTreeMap;
@@ -264,7 +264,7 @@ pub fn slice_at_intersects<T, F>(
 
         let mut index = next_index;
         let mut loop_count = 0;
-        let max_loop_count = pline.len();
+        let max_loop_count = pline.vertex_count();
         loop {
             if loop_count > max_loop_count {
                 // prevent infinite loop
@@ -598,7 +598,7 @@ where
             .pos()
             .fuzzy_eq_eps(pline.last().unwrap().pos(), slice_join_eps));
 
-        if pline.len() < 3 {
+        if pline.vertex_count() < 3 {
             // skip slice in case of just two vertexes on top of each other
             return;
         }
@@ -625,7 +625,7 @@ where
         visited_slice_idx[i] = true;
 
         let s = slices[i];
-        let mut current_pline = s.to_polyline(get_source(s), pos_equal_eps);
+        let mut current_pline: Polyline<T> = s.to_polyline(get_source(s), pos_equal_eps);
         let mut subslices = vec![s];
 
         let beginning_slice_idx = i;
@@ -703,7 +703,7 @@ pub fn polyline_boolean<T>(
 where
     T: Real,
 {
-    if pline1.len() < 2 {
+    if pline1.vertex_count() < 2 {
         return BooleanResult::default();
     }
 

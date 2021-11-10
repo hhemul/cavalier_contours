@@ -1,7 +1,8 @@
 mod test_utils;
 
 use cavalier_contours::polyline::{
-    BooleanOp, BooleanPlineSlice, BooleanResult, BooleanResultPline, Polyline, PolylineSlice,
+    BooleanOp, BooleanPlineSlice, BooleanResult, BooleanResultPline, Polyline, PolylineRef,
+    PolylineRefMut, PolylineSlice,
 };
 use test_utils::{
     create_property_set, property_sets_match, property_sets_match_abs_a, ModifiedPlineSet,
@@ -10,9 +11,10 @@ use test_utils::{
 
 fn create_boolean_property_set(polylines: &[BooleanResultPline<f64>]) -> Vec<PlineProperties> {
     for r in polylines {
-        assert_eq!(
-            r.pline.remove_repeat_pos(PlineProperties::POS_EQ_EPS).len(),
-            r.pline.len(),
+        assert!(
+            r.pline
+                .remove_repeat_pos(PlineProperties::POS_EQ_EPS)
+                .is_none(),
             "boolean result should not have repeat positioned vertexes"
         );
     }
@@ -60,7 +62,7 @@ fn run_same_boolean_test(
     let extents = self1.extents().unwrap();
     let disjoint1 = {
         let mut c = self1.clone();
-        c.translate(1.0 + extents.max_x - extents.min_x, 0.0);
+        c.translate_mut(1.0 + extents.max_x - extents.min_x, 0.0);
         c
     };
 
@@ -309,7 +311,7 @@ fn verify_slice_set(result_pline: &BooleanResultPline<f64>, pline1: &Polyline, p
         }
     };
     let first_slice = &result_pline.subslices[0];
-    let mut stitched =
+    let mut stitched: Polyline =
         first_slice.to_polyline(get_source(first_slice), PlineProperties::POS_EQ_EPS);
 
     for s in result_pline.subslices.iter().skip(1) {

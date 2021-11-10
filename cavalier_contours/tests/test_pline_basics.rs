@@ -5,12 +5,9 @@ use cavalier_contours::{
         traits::FuzzyEq,
     },
     pline_closed, pline_open,
-    polyline::{PlineVertex, Polyline},
+    polyline::{PlineVertex, Polyline, PolylineRef, PolylineRefMut},
 };
-use std::{
-    borrow::Cow,
-    f64::consts::{PI, TAU},
-};
+use std::f64::consts::{PI, TAU};
 
 #[test]
 fn iter_segments() {
@@ -156,14 +153,14 @@ fn iter_segment_indexes() {
 }
 
 #[test]
-fn invert_direction() {
+fn invert_direction_mut() {
     let mut polyline = Polyline::new_closed();
     polyline.add(0.0, 0.0, 0.1);
     polyline.add(2.0, 0.0, 0.2);
     polyline.add(2.0, 2.0, 0.3);
     polyline.add(0.0, 2.0, 0.4);
 
-    polyline.invert_direction();
+    polyline.invert_direction_mut();
 
     assert_fuzzy_eq!(polyline[0], PlineVertex::new(0.0, 2.0, -0.3));
     assert_fuzzy_eq!(polyline[1], PlineVertex::new(2.0, 2.0, -0.2));
@@ -177,9 +174,7 @@ fn remove_repeat() {
         // empty polyline
         let polyline = Polyline::new_closed();
         let result = polyline.remove_repeat_pos(1e-5);
-        assert!(matches!(result, Cow::Borrowed(_)));
-        assert!(result.is_empty());
-        assert!(result.is_closed());
+        assert!(result.is_none());
     }
 
     {
@@ -187,10 +182,7 @@ fn remove_repeat() {
         let mut polyline = Polyline::new_closed();
         polyline.add(2.0, 2.0, 0.5);
         let result = polyline.remove_repeat_pos(1e-5);
-        assert!(matches!(result, Cow::Borrowed(_)));
-        assert_eq!(result.len(), 1);
-        assert!(result.is_closed());
-        assert_fuzzy_eq!(result[0], PlineVertex::new(2.0, 2.0, 0.5));
+        assert!(result.is_none());
     }
 
     {
@@ -200,9 +192,10 @@ fn remove_repeat() {
         polyline.add(2.0, 2.0, 1.0);
         polyline.add(3.0, 3.0, 1.0);
         polyline.add(3.0, 3.0, 0.5);
-        let result = polyline.remove_repeat_pos(1e-5);
-        assert!(matches!(result, Cow::Owned(_)));
-        assert_eq!(result.len(), 2);
+        let result = polyline
+            .remove_repeat_pos(1e-5)
+            .expect("vertexes to be removed");
+        assert_eq!(result.vertex_count(), 2);
         assert!(result.is_closed());
         assert_fuzzy_eq!(result[0], PlineVertex::new(2.0, 2.0, 1.0));
         assert_fuzzy_eq!(result[1], PlineVertex::new(3.0, 3.0, 0.5));
@@ -215,9 +208,10 @@ fn remove_repeat() {
         polyline.add(2.0, 2.0, 1.0);
         polyline.add(3.0, 3.0, 1.0);
         polyline.add(3.0, 3.0, 0.5);
-        let result = polyline.remove_repeat_pos(1e-5);
-        assert!(matches!(result, Cow::Owned(_)));
-        assert_eq!(result.len(), 2);
+        let result = polyline
+            .remove_repeat_pos(1e-5)
+            .expect("vertexes to be removed");
+        assert_eq!(result.vertex_count(), 2);
         assert!(!result.is_closed());
         assert_fuzzy_eq!(result[0], PlineVertex::new(2.0, 2.0, 1.0));
         assert_fuzzy_eq!(result[1], PlineVertex::new(3.0, 3.0, 0.5));
@@ -229,11 +223,7 @@ fn remove_repeat() {
         polyline.add(2.0, 2.0, 0.5);
         polyline.add(3.0, 3.0, 1.0);
         let result = polyline.remove_repeat_pos(1e-5);
-        assert!(matches!(result, Cow::Borrowed(_)));
-        assert_eq!(result.len(), 2);
-        assert!(result.is_closed());
-        assert_fuzzy_eq!(result[0], PlineVertex::new(2.0, 2.0, 0.5));
-        assert_fuzzy_eq!(result[1], PlineVertex::new(3.0, 3.0, 1.0));
+        assert!(result.is_none());
     }
 
     {
@@ -243,12 +233,7 @@ fn remove_repeat() {
         polyline.add(3.0, 3.0, 1.0);
         polyline.add(4.0, 3.0, 1.0);
         let result = polyline.remove_repeat_pos(1e-5);
-        assert!(matches!(result, Cow::Borrowed(_)));
-        assert_eq!(result.len(), 3);
-        assert!(!result.is_closed());
-        assert_fuzzy_eq!(result[0], PlineVertex::new(2.0, 2.0, 0.5));
-        assert_fuzzy_eq!(result[1], PlineVertex::new(3.0, 3.0, 1.0));
-        assert_fuzzy_eq!(result[2], PlineVertex::new(4.0, 3.0, 1.0));
+        assert!(result.is_none());
     }
 
     {
@@ -257,9 +242,10 @@ fn remove_repeat() {
         polyline.add(2.0, 2.0, 0.5);
         polyline.add(3.0, 3.0, 1.0);
         polyline.add(2.0, 2.0, 1.0);
-        let result = polyline.remove_repeat_pos(1e-5);
-        assert!(matches!(result, Cow::Owned(_)));
-        assert_eq!(result.len(), 2);
+        let result = polyline
+            .remove_repeat_pos(1e-5)
+            .expect("vertexes to be removed");
+        assert_eq!(result.vertex_count(), 2);
         assert!(result.is_closed());
         assert_fuzzy_eq!(result[0], PlineVertex::new(2.0, 2.0, 0.5));
         assert_fuzzy_eq!(result[1], PlineVertex::new(3.0, 3.0, 1.0));
@@ -272,12 +258,7 @@ fn remove_repeat() {
         polyline.add(3.0, 3.0, 1.0);
         polyline.add(2.0, 2.0, 1.0);
         let result = polyline.remove_repeat_pos(1e-5);
-        assert!(matches!(result, Cow::Borrowed(_)));
-        assert_eq!(result.len(), 3);
-        assert!(!result.is_closed());
-        assert_fuzzy_eq!(result[0], PlineVertex::new(2.0, 2.0, 0.5));
-        assert_fuzzy_eq!(result[1], PlineVertex::new(3.0, 3.0, 1.0));
-        assert_fuzzy_eq!(result[2], PlineVertex::new(2.0, 2.0, 1.0));
+        assert!(result.is_none());
     }
 
     {
@@ -324,9 +305,10 @@ fn remove_repeat() {
         polyline.add(176.35227673059205, 2753.794442350188, 0.0);
         polyline.add(176.35229710705553, 2753.794442599162, 0.0);
 
-        let result = polyline.remove_repeat_pos(1e-5);
-        assert!(matches!(result, Cow::Owned(_)));
-        assert_eq!(result.len(), 7);
+        let result = polyline
+            .remove_repeat_pos(1e-5)
+            .expect("vertexes to be removed");
+        assert_eq!(result.vertex_count(), 7);
         assert!(!result.is_closed());
         assert_fuzzy_eq!(
             result[0],
@@ -377,9 +359,7 @@ fn remove_redundant_removes_repeat_pos() {
         // empty polyline
         let polyline = Polyline::new_closed();
         let result = polyline.remove_redundant(1e-5);
-        assert!(matches!(result, Cow::Borrowed(_)));
-        assert!(result.is_empty());
-        assert!(result.is_closed());
+        assert!(result.is_none());
     }
 
     {
@@ -387,10 +367,7 @@ fn remove_redundant_removes_repeat_pos() {
         let mut polyline = Polyline::new_closed();
         polyline.add(2.0, 2.0, 0.5);
         let result = polyline.remove_redundant(1e-5);
-        assert!(matches!(result, Cow::Borrowed(_)));
-        assert_eq!(result.len(), 1);
-        assert!(result.is_closed());
-        assert_fuzzy_eq!(result[0], PlineVertex::new(2.0, 2.0, 0.5));
+        assert!(result.is_none());
     }
 
     {
@@ -400,9 +377,10 @@ fn remove_redundant_removes_repeat_pos() {
         polyline.add(2.0, 2.0, 1.0);
         polyline.add(3.0, 3.0, 1.0);
         polyline.add(3.0, 3.0, 0.5);
-        let result = polyline.remove_redundant(1e-5);
-        assert!(matches!(result, Cow::Owned(_)));
-        assert_eq!(result.len(), 2);
+        let result = polyline
+            .remove_repeat_pos(1e-5)
+            .expect("vertexes to be removed");
+        assert_eq!(result.vertex_count(), 2);
         assert!(result.is_closed());
         assert_fuzzy_eq!(result[0], PlineVertex::new(2.0, 2.0, 1.0));
         assert_fuzzy_eq!(result[1], PlineVertex::new(3.0, 3.0, 0.5));
@@ -415,9 +393,10 @@ fn remove_redundant_removes_repeat_pos() {
         polyline.add(2.0, 2.0, 1.0);
         polyline.add(3.0, 3.0, 1.0);
         polyline.add(3.0, 3.0, 0.5);
-        let result = polyline.remove_redundant(1e-5);
-        assert!(matches!(result, Cow::Owned(_)));
-        assert_eq!(result.len(), 2);
+        let result = polyline
+            .remove_repeat_pos(1e-5)
+            .expect("vertexes to be removed");
+        assert_eq!(result.vertex_count(), 2);
         assert!(!result.is_closed());
         assert_fuzzy_eq!(result[0], PlineVertex::new(2.0, 2.0, 1.0));
         assert_fuzzy_eq!(result[1], PlineVertex::new(3.0, 3.0, 0.5));
@@ -429,11 +408,7 @@ fn remove_redundant_removes_repeat_pos() {
         polyline.add(2.0, 2.0, 0.5);
         polyline.add(3.0, 3.0, 1.0);
         let result = polyline.remove_redundant(1e-5);
-        assert!(matches!(result, Cow::Borrowed(_)));
-        assert_eq!(result.len(), 2);
-        assert!(result.is_closed());
-        assert_fuzzy_eq!(result[0], PlineVertex::new(2.0, 2.0, 0.5));
-        assert_fuzzy_eq!(result[1], PlineVertex::new(3.0, 3.0, 1.0));
+        assert!(result.is_none());
     }
 
     {
@@ -443,12 +418,7 @@ fn remove_redundant_removes_repeat_pos() {
         polyline.add(3.0, 3.0, 1.0);
         polyline.add(4.0, 3.0, 1.0);
         let result = polyline.remove_redundant(1e-5);
-        assert!(matches!(result, Cow::Borrowed(_)));
-        assert_eq!(result.len(), 3);
-        assert!(!result.is_closed());
-        assert_fuzzy_eq!(result[0], PlineVertex::new(2.0, 2.0, 0.5));
-        assert_fuzzy_eq!(result[1], PlineVertex::new(3.0, 3.0, 1.0));
-        assert_fuzzy_eq!(result[2], PlineVertex::new(4.0, 3.0, 1.0));
+        assert!(result.is_none());
     }
 
     {
@@ -457,9 +427,10 @@ fn remove_redundant_removes_repeat_pos() {
         polyline.add(2.0, 2.0, 0.5);
         polyline.add(3.0, 3.0, 1.0);
         polyline.add(2.0, 2.0, 1.0);
-        let result = polyline.remove_redundant(1e-5);
-        assert!(matches!(result, Cow::Owned(_)));
-        assert_eq!(result.len(), 2);
+        let result = polyline
+            .remove_repeat_pos(1e-5)
+            .expect("vertexes to be removed");
+        assert_eq!(result.vertex_count(), 2);
         assert!(result.is_closed());
         assert_fuzzy_eq!(result[0], PlineVertex::new(2.0, 2.0, 0.5));
         assert_fuzzy_eq!(result[1], PlineVertex::new(3.0, 3.0, 1.0));
@@ -472,12 +443,7 @@ fn remove_redundant_removes_repeat_pos() {
         polyline.add(3.0, 3.0, 1.0);
         polyline.add(2.0, 2.0, 1.0);
         let result = polyline.remove_redundant(1e-5);
-        assert!(matches!(result, Cow::Borrowed(_)));
-        assert_eq!(result.len(), 3);
-        assert!(!result.is_closed());
-        assert_fuzzy_eq!(result[0], PlineVertex::new(2.0, 2.0, 0.5));
-        assert_fuzzy_eq!(result[1], PlineVertex::new(3.0, 3.0, 1.0));
-        assert_fuzzy_eq!(result[2], PlineVertex::new(2.0, 2.0, 1.0));
+        assert!(result.is_none());
     }
 
     {
@@ -524,9 +490,10 @@ fn remove_redundant_removes_repeat_pos() {
         polyline.add(176.35227673059205, 2753.794442350188, 0.0);
         polyline.add(176.35229710705553, 2753.794442599162, 0.0);
 
-        let result = polyline.remove_repeat_pos(1e-5);
-        assert!(matches!(result, Cow::Owned(_)));
-        assert_eq!(result.len(), 7);
+        let result = polyline
+            .remove_repeat_pos(1e-5)
+            .expect("vertexes to be removed");
+        assert_eq!(result.vertex_count(), 7);
         assert!(!result.is_closed());
         assert_fuzzy_eq!(
             result[0],
@@ -581,9 +548,10 @@ fn remove_redundant() {
         polyline.add(3.0, 3.0, 0.0);
         polyline.add(4.0, 4.0, 0.0);
         polyline.add(2.0, 4.0, 0.0);
-        let result = polyline.remove_redundant(1e-5);
-        assert!(matches!(result, Cow::Owned(_)));
-        assert_eq!(result.len(), 3);
+        let result = polyline
+            .remove_redundant(1e-5)
+            .expect("vertexes to be removed");
+        assert_eq!(result.vertex_count(), 3);
         assert!(result.is_closed());
         assert_fuzzy_eq!(result[0], PlineVertex::new(2.0, 2.0, 0.0));
         assert_fuzzy_eq!(result[1], PlineVertex::new(4.0, 4.0, 0.0));
@@ -600,14 +568,7 @@ fn remove_redundant() {
         polyline.add(4.0, 4.0, 0.0);
         polyline.add(2.0, 4.0, 0.0);
         let result = polyline.remove_redundant(1e-5);
-        assert!(matches!(result, Cow::Borrowed(_)));
-        assert_eq!(result.len(), 5);
-        assert!(result.is_closed());
-        assert_fuzzy_eq!(result[0], PlineVertex::new(2.0, 2.0, 0.0));
-        assert_fuzzy_eq!(result[1], PlineVertex::new(3.0, 3.0, 0.0));
-        assert_fuzzy_eq!(result[2], PlineVertex::new(2.5, 2.5, 0.0));
-        assert_fuzzy_eq!(result[3], PlineVertex::new(4.0, 4.0, 0.0));
-        assert_fuzzy_eq!(result[4], PlineVertex::new(2.0, 4.0, 0.0));
+        assert!(result.is_none());
     }
 
     {
@@ -617,9 +578,10 @@ fn remove_redundant() {
         polyline.add(0.0, 0.0, -bulge);
         polyline.add(1.0, 1.0, -bulge);
         polyline.add(2.0, 0.0, -1.0);
-        let result = polyline.remove_redundant(1e-5);
-        assert!(matches!(result, Cow::Owned(_)));
-        assert_eq!(result.len(), 2);
+        let result = polyline
+            .remove_redundant(1e-5)
+            .expect("vertexes to be removed");
+        assert_eq!(result.vertex_count(), 2);
         assert!(result.is_closed());
         assert_fuzzy_eq!(result[0], PlineVertex::new(0.0, 0.0, -1.0));
         assert_fuzzy_eq!(result[1], PlineVertex::new(2.0, 0.0, -1.0));
@@ -638,9 +600,10 @@ fn remove_redundant() {
             .map(|i| (i as f64) * sub_angle)
             .for_each(|angle| polyline.add(radius * angle.cos(), radius * angle.sin(), bulge));
 
-        let result = polyline.remove_redundant(1e-5);
-        assert!(matches!(result, Cow::Owned(_)));
-        assert_eq!(result.len(), 2);
+        let result = polyline
+            .remove_redundant(1e-5)
+            .expect("vertexes to be removed");
+        assert_eq!(result.vertex_count(), 2);
         assert!(!result.is_closed());
         assert_fuzzy_eq!(
             result[0],
@@ -662,9 +625,10 @@ fn remove_redundant() {
             .map(|i| (i as f64) * sub_angle)
             .for_each(|angle| polyline.add(radius * angle.cos(), radius * angle.sin(), bulge));
 
-        let result = polyline.remove_redundant(1e-5);
-        assert!(matches!(result, Cow::Owned(_)));
-        assert_eq!(result.len(), 2);
+        let result = polyline
+            .remove_redundant(1e-5)
+            .expect("vertexes to be removed");
+        assert_eq!(result.vertex_count(), 2);
         assert!(result.is_closed());
         assert_fuzzy_eq!(result[0], PlineVertex::new(radius, 0.0, 1.0));
         assert_fuzzy_eq!(result[1], PlineVertex::new(-radius, 0.0, 1.0));
@@ -683,9 +647,10 @@ fn remove_redundant() {
             .map(|i| (i as f64) * sub_angle)
             .for_each(|angle| polyline.add(radius * angle.cos(), radius * angle.sin(), bulge));
 
-        let result = polyline.remove_redundant(1e-5);
-        assert!(matches!(result, Cow::Owned(_)));
-        assert_eq!(result.len(), 3);
+        let result = polyline
+            .remove_redundant(1e-5)
+            .expect("vertexes to be removed");
+        assert_eq!(result.vertex_count(), 3);
         assert!(!result.is_closed());
         assert_fuzzy_eq!(result[0], PlineVertex::new(radius, 0.0, 1.0));
         assert_fuzzy_eq!(result[1], PlineVertex::new(-radius, 0.0, 1.0));
@@ -701,11 +666,7 @@ fn remove_redundant() {
         polyline.add(0.0, radius, 1.0);
 
         let result = polyline.remove_redundant(1e-5);
-        assert!(matches!(result, Cow::Borrowed(_)));
-        assert_eq!(result.len(), 2);
-        assert!(result.is_closed());
-        assert_fuzzy_eq!(result[0], PlineVertex::new(0.0, -radius, 1.0));
-        assert_fuzzy_eq!(result[1], PlineVertex::new(0.0, radius, 1.0));
+        assert!(result.is_none());
     }
 
     {
@@ -719,9 +680,10 @@ fn remove_redundant() {
         polyline.add(radius, 0.0, 0.0);
         polyline.add(-radius, 0.0, bulge);
 
-        let result = polyline.remove_redundant(1e-5);
-        assert!(matches!(result, Cow::Owned(_)));
-        assert_eq!(result.len(), 2);
+        let result = polyline
+            .remove_redundant(1e-5)
+            .expect("vertexes to be removed");
+        assert_eq!(result.vertex_count(), 2);
         assert!(result.is_closed());
         assert_fuzzy_eq!(result[0], PlineVertex::new(-radius, 0.0, -1.0));
         assert_fuzzy_eq!(result[1], PlineVertex::new(radius, 0.0, 0.0));
@@ -740,12 +702,7 @@ fn remove_redundant() {
         polyline.add(-radius, 0.0, bulge);
 
         let result = polyline.remove_redundant(1e-5);
-        assert!(matches!(result, Cow::Borrowed(_)));
-        assert_eq!(result.len(), 3);
-        assert!(!result.is_closed());
-        assert_fuzzy_eq!(result[0], polyline[0]);
-        assert_fuzzy_eq!(result[1], polyline[1]);
-        assert_fuzzy_eq!(result[2], polyline[2]);
+        assert!(result.is_none());
     }
 
     {
@@ -757,9 +714,10 @@ fn remove_redundant() {
         polyline.add(-2.0, -2.0, 0.0);
         polyline.add(-1.0, -1.0, 0.0);
 
-        let result = polyline.remove_redundant(1e-5);
-        assert!(matches!(result, Cow::Owned(_)));
-        assert_eq!(result.len(), 3);
+        let result = polyline
+            .remove_redundant(1e-5)
+            .expect("vertexes to be removed");
+        assert_eq!(result.vertex_count(), 3);
         assert!(result.is_closed());
         assert_fuzzy_eq!(result[0], PlineVertex::new(-2.0, -2.0, 0.0));
         assert_fuzzy_eq!(result[1], PlineVertex::new(3.0, 3.0, 0.0));
@@ -777,14 +735,7 @@ fn remove_redundant() {
         polyline.add(-1.0, -1.0, 0.0);
 
         let result = polyline.remove_redundant(1e-5);
-        assert!(matches!(result, Cow::Borrowed(_)));
-        assert_eq!(result.len(), 5);
-        assert!(!result.is_closed());
-        assert_fuzzy_eq!(result[0], polyline[0]);
-        assert_fuzzy_eq!(result[1], polyline[1]);
-        assert_fuzzy_eq!(result[2], polyline[2]);
-        assert_fuzzy_eq!(result[3], polyline[3]);
-        assert_fuzzy_eq!(result[4], polyline[4]);
+        assert!(result.is_none());
     }
 
     {
@@ -796,9 +747,10 @@ fn remove_redundant() {
         polyline.add(0.5, 0.0, bulge);
         polyline.add(0.0, 0.5, bulge);
 
-        let result = polyline.remove_redundant(1e-5);
-        assert!(matches!(result, Cow::Owned(_)));
-        assert_eq!(result.len(), 2);
+        let result = polyline
+            .remove_redundant(1e-5)
+            .expect("vertexes to be removed");
+        assert_eq!(result.vertex_count(), 2);
         assert!(result.is_closed());
         assert_fuzzy_eq!(result[0], PlineVertex::new(-0.5, 0.0, 1.0));
         assert_fuzzy_eq!(result[1], PlineVertex::new(0.5, 0.0, 1.0));
@@ -817,9 +769,10 @@ fn remove_redundant() {
         polyline.add(0.0, 0.5, bulge);
         polyline.add(-0.5, 0.0, 0.0);
 
-        let result = polyline.remove_redundant(1e-5);
-        assert!(matches!(result, Cow::Owned(_)));
-        assert_eq!(result.len(), 2);
+        let result = polyline
+            .remove_redundant(1e-5)
+            .expect("vertexes to be removed");
+        assert_eq!(result.vertex_count(), 2);
         assert!(result.is_closed());
         assert_fuzzy_eq!(result[0], PlineVertex::new(-0.5, 0.0, 1.0));
         assert_fuzzy_eq!(result[1], PlineVertex::new(0.5, 0.0, 1.0));
@@ -838,9 +791,10 @@ fn remove_redundant() {
         polyline.add(0.0, 0.5, 0.0);
         polyline.add(0.0, 0.5, bulge);
 
-        let result = polyline.remove_redundant(1e-5);
-        assert!(matches!(result, Cow::Owned(_)));
-        assert_eq!(result.len(), 2);
+        let result = polyline
+            .remove_redundant(1e-5)
+            .expect("vertexes to be removed");
+        assert_eq!(result.vertex_count(), 2);
         assert!(result.is_closed());
         assert_fuzzy_eq!(result[0], PlineVertex::new(-0.5, 0.0, 1.0));
         assert_fuzzy_eq!(result[1], PlineVertex::new(0.5, 0.0, 1.0));
@@ -859,9 +813,10 @@ fn remove_redundant() {
         polyline.add(0.0, 0.5, bulge);
         polyline.add(-0.5, 0.0, 0.0);
 
-        let result = polyline.remove_redundant(1e-5);
-        assert!(matches!(result, Cow::Owned(_)));
-        assert_eq!(result.len(), 3);
+        let result = polyline
+            .remove_redundant(1e-5)
+            .expect("vertexes to be removed");
+        assert_eq!(result.vertex_count(), 3);
         assert!(!result.is_closed());
         assert_fuzzy_eq!(result[0], PlineVertex::new(-0.5, 0.0, 1.0));
         assert_fuzzy_eq!(result[1], PlineVertex::new(0.5, 0.0, 1.0));
@@ -889,9 +844,10 @@ fn remove_redundant() {
         polyline.add(0.0, 0.5, bulge);
         polyline.add(0.0, 0.5, bulge);
 
-        let result = polyline.remove_redundant(1e-5);
-        assert!(matches!(result, Cow::Owned(_)));
-        assert_eq!(result.len(), 2);
+        let result = polyline
+            .remove_redundant(1e-5)
+            .expect("vertexes to be removed");
+        assert_eq!(result.vertex_count(), 2);
         assert!(result.is_closed());
         assert_fuzzy_eq!(result[0], PlineVertex::new(-0.5, 0.0, 1.0));
         assert_fuzzy_eq!(result[1], PlineVertex::new(0.5, 0.0, 1.0));
@@ -957,7 +913,7 @@ fn rotate_start() {
         ];
 
         let rot_end_is_start = polyline
-            .rotate_start(polyline.len() - 1, Vector2::new(0.0, 1.0), 1e-5)
+            .rotate_start(polyline.vertex_count() - 1, Vector2::new(0.0, 1.0), 1e-5)
             .unwrap();
 
         let expected_end_as_start = pline_closed![
@@ -1023,7 +979,7 @@ fn area() {
         circle.add(0.0, 0.0, 1.0);
         circle.add(2.0, 0.0, 1.0);
         assert_fuzzy_eq!(circle.area(), PI);
-        circle.invert_direction();
+        circle.invert_direction_mut();
         assert_fuzzy_eq!(circle.area(), -PI);
     }
 
@@ -1032,7 +988,7 @@ fn area() {
         half_circle.add(0.0, 0.0, -1.0);
         half_circle.add(2.0, 0.0, 0.0);
         assert_fuzzy_eq!(half_circle.area(), -0.5 * PI);
-        half_circle.invert_direction();
+        half_circle.invert_direction_mut();
         assert_fuzzy_eq!(half_circle.area(), 0.5 * PI);
     }
 
@@ -1043,7 +999,7 @@ fn area() {
         rectangle.add(3.0, 2.0, 0.0);
         rectangle.add(0.0, 2.0, 0.0);
         assert_fuzzy_eq!(rectangle.area(), 6.0);
-        rectangle.invert_direction();
+        rectangle.invert_direction_mut();
         assert_fuzzy_eq!(rectangle.area(), -6.0);
     }
 
@@ -1054,7 +1010,7 @@ fn area() {
         open_polyline.add(2.0, 2.0, 0.0);
         open_polyline.add(0.0, 2.0, 0.0);
         assert_fuzzy_eq!(open_polyline.area(), 0.0);
-        open_polyline.invert_direction();
+        open_polyline.invert_direction_mut();
         assert_fuzzy_eq!(open_polyline.area(), 0.0);
     }
 
@@ -1110,7 +1066,7 @@ fn path_length() {
         circle.add(0.0, 0.0, 1.0);
         circle.add(2.0, 0.0, 1.0);
         assert_fuzzy_eq!(circle.path_length(), TAU);
-        circle.invert_direction();
+        circle.invert_direction_mut();
         assert_fuzzy_eq!(circle.path_length(), TAU);
     }
 
@@ -1119,7 +1075,7 @@ fn path_length() {
         half_circle.add(0.0, 0.0, -1.0);
         half_circle.add(2.0, 0.0, 0.0);
         assert_fuzzy_eq!(half_circle.path_length(), PI + 2.0);
-        half_circle.invert_direction();
+        half_circle.invert_direction_mut();
         assert_fuzzy_eq!(half_circle.path_length(), PI + 2.0);
     }
 
@@ -1130,7 +1086,7 @@ fn path_length() {
         rectangle.add(3.0, 2.0, 0.0);
         rectangle.add(0.0, 2.0, 0.0);
         assert_fuzzy_eq!(rectangle.path_length(), 10.0);
-        rectangle.invert_direction();
+        rectangle.invert_direction_mut();
         assert_fuzzy_eq!(rectangle.path_length(), 10.0);
     }
 
@@ -1141,7 +1097,7 @@ fn path_length() {
         open_polyline.add(3.0, 2.0, 0.0);
         open_polyline.add(0.0, 2.0, 0.0);
         assert_fuzzy_eq!(open_polyline.path_length(), 8.0);
-        open_polyline.invert_direction();
+        open_polyline.invert_direction_mut();
         assert_fuzzy_eq!(open_polyline.path_length(), 8.0);
     }
 }
