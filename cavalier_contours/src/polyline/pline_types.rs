@@ -461,13 +461,13 @@ impl<T> PlineIntersectsCollection<T> {
     }
 }
 
-fn get_view_vertex_impl<'a, P, T>(
+fn get_view_vertex_impl<P, T>(
     view_data: &PlineViewData<T>,
     source: &P,
     index: usize,
 ) -> Option<PlineVertex<T>>
 where
-    P: PolylineRef<'a, Num = T> + ?Sized,
+    P: PolylineRef<Num = T> + ?Sized,
     T: Real,
 {
     if index > view_data.end_index_offset + 1 {
@@ -538,12 +538,19 @@ where
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct PlineView<'s, P, T>
+pub struct PlineView<'a, P, T>
 where
     P: ?Sized,
 {
-    pub source: &'s P,
+    pub source: &'a P,
     pub data: PlineViewData<T>,
+}
+
+impl<'a, P, T> PlineView<'a, P, T> {
+    #[inline]
+    pub fn detach(self) -> PlineViewData<T> {
+        self.data
+    }
 }
 
 // impl<'a, T> PlineView<'a, T> {
@@ -559,16 +566,12 @@ where
 //     }
 // }
 
-impl<'a, 's, P, T> PolylineRef<'a> for PlineView<'s, P, T>
+impl<'a, P, T> PolylineRef for PlineView<'a, P, T>
 where
-    P: PolylineRef<'a, Num = T> + ?Sized + 'a,
+    P: PolylineRef<Num = T> + ?Sized,
     T: Real,
 {
     type Num = T;
-
-    type SegmentIter = PlineViewSegIter<'a, P, T>;
-
-    type VertexIter = PlineViewVertexIter<'a, P, T>;
 
     type OutputPolyline = Polyline<T>;
 
@@ -591,135 +594,6 @@ where
     fn at(&self, index: usize) -> PlineVertex<Self::Num> {
         get_view_vertex_impl(&self.data, self.source, index).unwrap()
     }
-
-    #[inline]
-    fn iter_segments(&'a self) -> Self::SegmentIter {
-        PlineViewSegIter::new(self.source, self.data)
-    }
-
-    #[inline]
-    fn iter_vertexes(&'a self) -> Self::VertexIter {
-        PlineViewVertexIter::new(self.source, self.data)
-    }
-}
-
-#[derive(Debug)]
-pub struct PlineViewSegIter<'a, P, T>
-where
-    P: ?Sized,
-{
-    source: &'a P,
-    data: PlineViewData<T>,
-    pos: usize,
-}
-
-impl<'a, P, T> Clone for PlineViewSegIter<'a, P, T>
-where
-    T: Clone,
-    P: ?Sized,
-{
-    #[inline]
-    fn clone(&self) -> Self {
-        Self {
-            source: self.source,
-            data: self.data.clone(),
-            pos: self.pos,
-        }
-    }
-}
-
-impl<'a, P, T> PlineViewSegIter<'a, P, T>
-where
-    P: ?Sized,
-{
-    #[inline]
-    pub fn new(source: &'a P, data: PlineViewData<T>) -> Self {
-        Self {
-            source,
-            data,
-            pos: 0,
-        }
-    }
-}
-
-impl<'a, P, T> Iterator for PlineViewSegIter<'a, P, T>
-where
-    P: PolylineRef<'a, Num = T> + ?Sized,
-    T: Real,
-{
-    type Item = (PlineVertex<T>, PlineVertex<T>);
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.pos == self.data.end_index_offset + 1 {
-            return None;
-        }
-        // let r = (self.source.at(self.pos), self.source.at(self.pos + 1));
-        let r = Some((
-            get_view_vertex_impl(&self.data, self.source, self.pos).unwrap(),
-            get_view_vertex_impl(&self.data, self.source, self.pos + 1).unwrap(),
-        ));
-        self.pos += 1;
-        r
-    }
-}
-
-#[derive(Debug)]
-pub struct PlineViewVertexIter<'a, P, T>
-where
-    P: ?Sized,
-{
-    source: &'a P,
-    data: PlineViewData<T>,
-    pos: usize,
-}
-
-impl<'a, P, T> Clone for PlineViewVertexIter<'a, P, T>
-where
-    T: Clone,
-    P: ?Sized,
-{
-    #[inline]
-    fn clone(&self) -> Self {
-        Self {
-            source: self.source,
-            data: self.data.clone(),
-            pos: self.pos,
-        }
-    }
-}
-
-impl<'a, P, T> PlineViewVertexIter<'a, P, T>
-where
-    P: ?Sized,
-{
-    #[inline]
-    pub fn new(source: &'a P, data: PlineViewData<T>) -> Self {
-        Self {
-            source,
-            data,
-            pos: 0,
-        }
-    }
-}
-
-impl<'a, P, T> Iterator for PlineViewVertexIter<'a, P, T>
-where
-    P: PolylineRef<'a, Num = T> + ?Sized,
-    T: Real,
-{
-    type Item = PlineVertex<T>;
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.pos == self.data.end_index_offset + 2 {
-            return None;
-        }
-        // let r = self.view.at(self.pos);
-        let r = get_view_vertex_impl(&self.data, self.source, self.pos);
-        self.pos += 1;
-        r
-    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -736,6 +610,7 @@ impl<T> PlineViewData<T>
 where
     T: Real,
 {
+    #[inline]
     pub fn view<'a, P>(&self, source: &'a P) -> PlineView<'a, P, T>
     where
         P: ?Sized,
@@ -808,9 +683,9 @@ where
     /// data).
     ///
     /// `pos_equal_eps` is used to prevent repeat position vertexes.
-    fn to_polyline<'a, P, O>(&self, source: &'a P, pos_equal_eps: T) -> O
+    fn to_polyline<P, O>(&self, source: &P, pos_equal_eps: T) -> O
     where
-        P: PolylineRef<'a, Num = T> + ?Sized,
+        P: PolylineRef<Num = T> + ?Sized,
         O: for<'b> PolylineRefMut<'b, Num = T> + PolylineCreation,
     {
         let vertex_count = self.vertex_count();
@@ -835,9 +710,9 @@ where
     /// Visit all vertexes in this slice (source reference required for vertex data) until the slice
     /// has been fully traversed or the visitor breaks.
     #[inline]
-    fn visit_vertexes<'a, P, V, C>(&self, source: &'a P, visitor: &mut V) -> C
+    fn visit_vertexes<P, V, C>(&self, source: &P, visitor: &mut V) -> C
     where
-        P: PolylineRef<'a, Num = T> + ?Sized,
+        P: PolylineRef<Num = T> + ?Sized,
         C: ControlFlow,
         V: PlineVertexVisitor<T, C>,
     {
@@ -851,26 +726,20 @@ where
         };
         // let view = data.view(source);
         let view = PlineView { data, source };
-        let iter = view.iter_vertexes();
 
-        // for v in view.iter_vertexes() {
-        //     try_cf!(visitor.visit_vertex(v));
-        // }
+        for v in view.iter_vertexes() {
+            try_cf!(visitor.visit_vertex(v));
+        }
 
         C::continuing()
-        // if self.inverted_direction() {
-        //     visit_inverted_slice_vertexes_impl(self, source, visitor)
-        // } else {
-        //     visit_slice_vertexes_impl(self, source, visitor)
-        // }
     }
 
     /// Visit all polyline segments in this slice (source reference required for vertex data) until
     /// the slice has been fully traversed or the visitor breaks.
     #[inline]
-    fn visit_segs<'a, P, V, C>(&self, source: &'a P, visitor: &mut V) -> C
+    fn visit_segs<P, V, C>(&self, source: &P, visitor: &mut V) -> C
     where
-        P: PolylineRef<'a, Num = T> + ?Sized,
+        P: PolylineRef<Num = T> + ?Sized,
         C: ControlFlow,
         V: PlineSegVisitor<T, C>,
     {
@@ -892,9 +761,9 @@ where
     ///
     /// `pos_equal_eps` is used to prevent repeat position vertexes.
     #[inline]
-    fn stitch_onto<'a, 'b, P, O>(&self, source: &'a P, target: &'b mut O, pos_equal_eps: T)
+    fn stitch_onto<'b, P, O>(&self, source: &P, target: &'b mut O, pos_equal_eps: T)
     where
-        P: PolylineRef<'a, Num = T> + ?Sized,
+        P: PolylineRef<Num = T> + ?Sized,
         O: PolylineRefMut<'b, Num = T> + ?Sized,
     {
         target.reserve(self.vertex_count());
@@ -985,9 +854,9 @@ where
 
     /// Function mostly used for debugging and asserts, checks that this slice's properties are
     /// valid for the source polyline provided.
-    fn validate_for_source<'a, P>(&self, source: &'a P) -> SliceValidation<T>
+    fn validate_for_source<P>(&self, source: &P) -> SliceValidation<T>
     where
-        P: PolylineRef<'a, Num = T> + ?Sized,
+        P: PolylineRef<Num = T> + ?Sized,
     {
         if self.end_index_offset() > source.vertex_count() {
             return SliceValidation::OffsetOutOfRange {
@@ -1077,15 +946,15 @@ where
     /// Create OpenPlineSlice from source polyline that exists on a single segment.
     ///
     /// Returns `None` if `slice_start_vertex` is on top of `end_intersect` (collapsed slice).
-    pub fn create_on_single_segment<'a, P>(
-        source: &'a P,
+    pub fn create_on_single_segment<P>(
+        source: &P,
         start_index: usize,
         updated_start: PlineVertex<T>,
         end_intersect: Vector2<T>,
         pos_equal_eps: T,
     ) -> Option<Self>
     where
-        P: PolylineRef<'a, Num = T> + ?Sized,
+        P: PolylineRef<Num = T> + ?Sized,
     {
         if updated_start
             .pos()
@@ -1112,8 +981,8 @@ where
     ///
     /// This function panics if `traverse_count == 0`. Use
     /// [OpenPlineSlice::create_on_single_segment] if slice exists on a single segment.
-    pub fn create<'a, P>(
-        source: &'a P,
+    pub fn create<P>(
+        source: &P,
         start_index: usize,
         end_intersect: Vector2<T>,
         intersect_index: usize,
@@ -1122,7 +991,7 @@ where
         pos_equal_eps: T,
     ) -> Self
     where
-        P: PolylineRef<'a, Num = T> + ?Sized,
+        P: PolylineRef<Num = T> + ?Sized,
     {
         assert!(traverse_count != 0,
             "traverse_count must be greater than 1, use different constructor if slice is all on one segment"
@@ -1170,9 +1039,9 @@ where
     /// # Panics
     ///
     /// This function panics if `source` has less than 2 vertexes.
-    pub fn from_entire_pline<'a, P>(source: &'a P) -> Self
+    pub fn from_entire_pline<P>(source: &P) -> Self
     where
-        P: PolylineRef<'a, Num = T> + ?Sized,
+        P: PolylineRef<Num = T> + ?Sized,
     {
         let vc = source.vertex_count();
         assert!(
@@ -1216,7 +1085,7 @@ where
         pos_equal_eps: T,
     ) -> Option<Self>
     where
-        P: PolylineRef<'a, Num = T> + ?Sized,
+        P: PolylineRef<Num = T> + ?Sized,
     {
         debug_assert!(
             start_index <= end_index || source.is_closed(),

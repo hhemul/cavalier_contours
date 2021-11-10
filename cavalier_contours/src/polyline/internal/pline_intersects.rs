@@ -17,13 +17,9 @@ use std::collections::HashSet;
 
 /// Visits all local self intersects of the polyline. Local self intersects are defined as between
 /// two polyline segments that share a vertex.
-pub fn visit_local_self_intersects<'a, P, T, C, V>(
-    polyline: &P,
-    visitor: &mut V,
-    pos_equal_eps: T,
-) -> C
+pub fn visit_local_self_intersects<P, T, C, V>(polyline: &P, visitor: &mut V, pos_equal_eps: T) -> C
 where
-    P: PolylineRef<'a, Num = T> + ?Sized,
+    P: PolylineRef<Num = T> + ?Sized,
     T: Real,
     C: ControlFlow,
     V: PlineIntersectVisitor<T, C>,
@@ -121,14 +117,14 @@ where
 /// start of that segment is recorded (unless the polyline is open and the intersect is at the very
 /// end of the polyline, then the second to last vertex index is used to maintain that it represents
 /// the start of a polyline segment).
-pub fn visit_global_self_intersects<'a, P, T, C, V>(
+pub fn visit_global_self_intersects<P, T, C, V>(
     polyline: &P,
     aabb_index: &StaticAABB2DIndex<T>,
     visitor: &mut V,
     pos_equal_eps: T,
 ) -> C
 where
-    P: PolylineRef<'a, Num = T> + ?Sized,
+    P: PolylineRef<Num = T> + ?Sized,
     T: Real,
     C: ControlFlow,
     V: PlineIntersectVisitor<T, C>,
@@ -237,13 +233,13 @@ where
 
 /// Find all self intersects of a polyline, returning any overlapping intersects as basic intersects
 /// at each end point of overlap segment.
-pub fn all_self_intersects_as_basic<'a, P, T>(
-    polyline: &'a P,
+pub fn all_self_intersects_as_basic<P, T>(
+    polyline: &P,
     aabb_index: &StaticAABB2DIndex<T>,
     pos_equal_eps: T,
 ) -> Vec<PlineBasicIntersect<T>>
 where
-    P: PolylineRef<'a, Num = T> + ?Sized,
+    P: PolylineRef<Num = T> + ?Sized,
     T: Real,
 {
     struct Visitor<U> {
@@ -296,14 +292,14 @@ where
 /// start of that segment is recorded (unless the polyline is open and the intersect is at the very
 /// end of the polyline, then the second to last vertex index is used to maintain that it represents
 /// the start of a polyline segment).
-pub fn find_intersects<'a, 'b, P, O, T>(
-    pline1: &'a P,
-    pline2: &'b O,
+pub fn find_intersects<P, O, T>(
+    pline1: &P,
+    pline2: &O,
     options: &FindIntersectsOptions<T>,
 ) -> PlineIntersectsCollection<T>
 where
-    P: PolylineRef<'a, Num = T> + ?Sized,
-    O: PolylineRef<'b, Num = T> + ?Sized,
+    P: PolylineRef<Num = T> + ?Sized,
+    O: PolylineRef<Num = T> + ?Sized,
     T: Real,
 {
     let mut result = PlineIntersectsCollection::new_empty();

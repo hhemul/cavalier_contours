@@ -1,4 +1,4 @@
-use std::iter::Copied;
+use std::iter::{Copied, Skip, Zip};
 
 use static_aabb2d_index::{StaticAABB2DIndex, StaticAABB2DIndexBuilder, AABB};
 
@@ -31,13 +31,164 @@ use num_traits::One;
 use num_traits::ToPrimitive;
 use num_traits::Zero;
 
-pub trait PolylineRef<'a> {
+#[derive(Debug)]
+pub struct VertexIter<'a, P>
+where
+    P: ?Sized,
+{
+    pline: &'a P,
+    pos: usize,
+}
+
+impl<'a, P> VertexIter<'a, P>
+where
+    P: PolylineRef + ?Sized,
+{
+    #[inline]
+    pub fn new(pline: &'a P) -> Self {
+        Self { pline, pos: 0 }
+    }
+}
+
+impl<'a, P> Clone for VertexIter<'a, P>
+where
+    P: ?Sized,
+{
+    #[inline]
+    fn clone(&self) -> Self {
+        Self {
+            pline: self.pline,
+            pos: self.pos,
+        }
+    }
+}
+
+impl<'a, P, T> Iterator for VertexIter<'a, P>
+where
+    P: PolylineRef<Num = T> + ?Sized,
+    T: Real,
+{
+    type Item = PlineVertex<T>;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.pos == self.pline.vertex_count() {
+            return None;
+        }
+        let r = self.pline.get(self.pos);
+        self.pos += 1;
+        r
+    }
+}
+
+impl<'a, P> ExactSizeIterator for VertexIter<'a, P>
+where
+    P: PolylineRef,
+{
+    #[inline]
+    fn len(&self) -> usize {
+        let (lower, upper) = self.size_hint();
+        assert_eq!(upper, Some(lower));
+        lower
+    }
+}
+
+#[derive(Debug)]
+pub struct SegmentIter<'a, P>
+where
+    P: ?Sized,
+{
+    pline: &'a P,
+    pos: usize,
+    exhausted: bool,
+}
+
+impl<'a, P> SegmentIter<'a, P>
+where
+    P: PolylineRef + ?Sized,
+{
+    #[inline]
+    pub fn new(pline: &'a P) -> Self {
+        Self {
+            pline,
+            pos: 0,
+            exhausted: pline.vertex_count() < 2,
+        }
+    }
+}
+
+impl<'a, P> Clone for SegmentIter<'a, P>
+where
+    P: ?Sized,
+{
+    #[inline]
+    fn clone(&self) -> Self {
+        Self {
+            pline: self.pline,
+            pos: self.pos,
+            exhausted: self.exhausted,
+        }
+    }
+}
+
+impl<'a, P, T> Iterator for SegmentIter<'a, P>
+where
+    P: PolylineRef<Num = T> + ?Sized,
+    T: Real,
+{
+    type Item = (PlineVertex<T>, PlineVertex<T>);
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.exhausted {
+            return None;
+        }
+
+        let vc = self.pline.vertex_count();
+        if self.pos == vc - 1 {
+            if self.pline.is_closed() {
+                self.exhausted = true;
+                return Some((self.pline.at(vc - 1), self.pline.at(0)));
+            } else {
+                return None;
+            }
+        }
+
+        let r = (self.pline.at(self.pos), self.pline.at(self.pos + 1));
+        self.pos += 1;
+        Some(r)
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        if self.exhausted {
+            (0, Some(0))
+        } else {
+            let remaining = if self.pline.is_closed() {
+                self.pline.vertex_count() - self.pos
+            } else {
+                self.pline.vertex_count() - self.pos - 1
+            };
+            (remaining, Some(remaining))
+        }
+    }
+}
+
+impl<'a, P> ExactSizeIterator for SegmentIter<'a, P>
+where
+    P: PolylineRef,
+{
+    #[inline]
+    fn len(&self) -> usize {
+        let (lower, upper) = self.size_hint();
+        assert_eq!(upper, Some(lower));
+        lower
+    }
+}
+
+pub trait PolylineRef {
     /// Numeric type used for the polyline.
     type Num: Real;
-    /// Iterator type for iterating over polyline segments.
-    type SegmentIter: Iterator<Item = (PlineVertex<Self::Num>, PlineVertex<Self::Num>)> + Clone;
-    /// Iterator type for iterating over polyline vertexes.
-    type VertexIter: Iterator<Item = PlineVertex<Self::Num>> + Clone;
     /// Type used for output when invoking methods that return a new polyline.
     type OutputPolyline: for<'b> PolylineRefMut<'b, Num = Self::Num>
         + PolylineCreation<Num = Self::Num>
@@ -60,10 +211,16 @@ pub trait PolylineRef<'a> {
     fn at(&self, index: usize) -> PlineVertex<Self::Num>;
 
     /// Return iterator to iterate over all the polyline segments.
-    fn iter_segments(&'a self) -> Self::SegmentIter;
+    #[inline]
+    fn iter_segments(&self) -> SegmentIter<'_, Self> {
+        SegmentIter::new(self)
+    }
 
     /// Return iterator to iterate over all the polyline vertexes.
-    fn iter_vertexes(&'a self) -> Self::VertexIter;
+    #[inline]
+    fn iter_vertexes(&self) -> VertexIter<'_, Self> {
+        VertexIter::new(self)
+    }
 
     /// Returns true if vertex count is 0.
     #[inline]
@@ -74,7 +231,7 @@ pub trait PolylineRef<'a> {
     /// Fuzzy compare with another polyline using `eps` epsilon value for fuzzy comparison of
     /// vertexes.
     #[inline]
-    fn fuzzy_eq_eps(&'a self, other: &'a Self, eps: Self::Num) -> bool {
+    fn fuzzy_eq_eps(&self, other: &Self, eps: Self::Num) -> bool {
         self.vertex_count() == other.vertex_count()
             && self.vertex_count() == other.vertex_count()
             && self
@@ -85,7 +242,7 @@ pub trait PolylineRef<'a> {
 
     /// Same as [PolylineRef::fuzzy_eq_eps] but uses default `Self::Num::fuzzy_epsilon()`.
     #[inline]
-    fn fuzzy_eq(&'a self, other: &'a Self) -> bool {
+    fn fuzzy_eq(&self, other: &Self) -> bool {
         self.fuzzy_eq_eps(other, Self::Num::fuzzy_epsilon())
     }
 
@@ -242,7 +399,7 @@ pub trait PolylineRef<'a> {
     /// assert!(extents.max_x.fuzzy_eq(3.0));
     /// assert!(extents.max_y.fuzzy_eq(2.0));
     /// ```
-    fn extents(&'a self) -> Option<AABB<Self::Num>> {
+    fn extents(&self) -> Option<AABB<Self::Num>> {
         if self.segment_count() == 0 {
             return None;
         }
@@ -296,7 +453,7 @@ pub trait PolylineRef<'a> {
     /// assert!(polyline.path_length().fuzzy_eq(2.0 * std::f64::consts::PI));
     /// ```
     #[inline]
-    fn path_length(&'a self) -> Self::Num {
+    fn path_length(&self) -> Self::Num {
         self.iter_segments()
             .fold(Self::Num::zero(), |acc, (v1, v2)| acc + seg_length(v1, v2))
     }
@@ -325,7 +482,7 @@ pub trait PolylineRef<'a> {
     /// polyline.invert_direction_mut();
     /// assert!(polyline.area().fuzzy_eq(-std::f64::consts::PI));
     /// ```
-    fn area(&'a self) -> Self::Num {
+    fn area(&self) -> Self::Num {
         use num_traits::real::Real;
         if !self.is_closed() {
             return Self::Num::zero();
@@ -370,7 +527,7 @@ pub trait PolylineRef<'a> {
     ///
     /// This method just uses the [Polyline::area] function to determine directionality of a closed
     /// polyline which may not yield a useful result if the polyline has self intersects.
-    fn orientation(&'a self) -> PlineOrientation {
+    fn orientation(&self) -> PlineOrientation {
         if !self.is_closed() {
             return PlineOrientation::Open;
         }
@@ -400,7 +557,7 @@ pub trait PolylineRef<'a> {
     /// assert!(result[0].fuzzy_eq(PlineVertex::new(2.0, 2.0, 1.0)));
     /// assert!(result[1].fuzzy_eq(PlineVertex::new(3.0, 3.0, 0.5)));
     /// ```
-    fn remove_repeat_pos(&'a self, pos_equal_eps: Self::Num) -> Option<Self::OutputPolyline> {
+    fn remove_repeat_pos(&self, pos_equal_eps: Self::Num) -> Option<Self::OutputPolyline> {
         if self.vertex_count() < 2 {
             return None;
         }
@@ -497,7 +654,7 @@ pub trait PolylineRef<'a> {
     /// assert!(result[0].fuzzy_eq(PlineVertex::new(-0.5, 0.0, 1.0)));
     /// assert!(result[1].fuzzy_eq(PlineVertex::new(0.5, 0.0, 1.0)));
     /// ```
-    fn remove_redundant(&'a self, pos_equal_eps: Self::Num) -> Option<Self::OutputPolyline> {
+    fn remove_redundant(&self, pos_equal_eps: Self::Num) -> Option<Self::OutputPolyline> {
         use num_traits::real::Real;
         let vc = self.vertex_count();
         if vc < 2 {
@@ -802,7 +959,7 @@ pub trait PolylineRef<'a> {
     /// assert!(rot.fuzzy_eq(&expected_rot));
     /// ```
     fn rotate_start(
-        &'a self,
+        &self,
         start_index: usize,
         point: Vector2<Self::Num>,
         pos_equal_eps: Self::Num,
@@ -862,7 +1019,7 @@ pub trait PolylineRef<'a> {
     ///
     /// Returns `None` if polyline vertex count is less than 2 or an error occurs in constructing
     /// the spatial index.
-    fn create_approx_aabb_index(&'a self) -> Option<StaticAABB2DIndex<Self::Num>> {
+    fn create_approx_aabb_index(&self) -> Option<StaticAABB2DIndex<Self::Num>> {
         let vc = self.vertex_count();
         if vc < 2 {
             return None;
@@ -893,7 +1050,7 @@ pub trait PolylineRef<'a> {
     ///
     /// Returns `None` if polyline vertex count is less than 2 or an error occurs in constructing
     /// the spatial index.
-    fn create_aabb_index(&'a self) -> Option<StaticAABB2DIndex<Self::Num>> {
+    fn create_aabb_index(&self) -> Option<StaticAABB2DIndex<Self::Num>> {
         let vc = self.vertex_count();
         if vc < 2 {
             return None;
@@ -1144,7 +1301,7 @@ pub trait PolylineRef<'a> {
     /// polyline.invert_direction_mut();
     /// assert_eq!(polyline.winding_number(Vector2::new(1.0, 0.0)), -2);
     /// ```
-    fn winding_number(&'a self, point: Vector2<Self::Num>) -> i32 {
+    fn winding_number(&self, point: Vector2<Self::Num>) -> i32 {
         if !self.is_closed() || self.vertex_count() < 2 {
             return 0;
         }
@@ -1168,7 +1325,7 @@ pub trait PolylineRef<'a> {
     /// `error_distance` is the maximum distance from any line segment to the arc it is
     /// approximating. Line segments are circumscribed by the arc (all line end points lie on the
     /// arc path).
-    fn arcs_to_approx_lines(&'a self, error_distance: Self::Num) -> Option<Self::OutputPolyline> {
+    fn arcs_to_approx_lines(&self, error_distance: Self::Num) -> Option<Self::OutputPolyline> {
         use num_traits::real::Real;
         let mut result = Self::OutputPolyline::with_capacity(0, self.is_closed());
 
@@ -1227,7 +1384,7 @@ pub trait PolylineRef<'a> {
 
     /// Visit self intersects of the polyline using default options.
     #[inline]
-    fn visit_self_intersects<C, V>(&'a self, visitor: &mut V) -> C
+    fn visit_self_intersects<C, V>(&self, visitor: &mut V) -> C
     where
         C: ControlFlow,
         V: PlineIntersectVisitor<Self::Num, C>,
@@ -1237,7 +1394,7 @@ pub trait PolylineRef<'a> {
 
     /// Visit self intersects of the polyline using options provided.
     fn visit_self_intersects_opt<C, V>(
-        &'a self,
+        &self,
         visitor: &mut V,
         options: &PlineSelfIntersectOptions<Self::Num>,
     ) -> C
@@ -1279,9 +1436,9 @@ pub trait PolylineRef<'a> {
 
     /// Find all intersects between two polylines using default options.
     #[inline]
-    fn find_intersects<'b, P>(&'a self, other: &'b P) -> PlineIntersectsCollection<Self::Num>
+    fn find_intersects<'b, P>(&self, other: &'b P) -> PlineIntersectsCollection<Self::Num>
     where
-        P: PolylineRef<'b, Num = Self::Num>,
+        P: PolylineRef<Num = Self::Num>,
     {
         self.find_intersects_opt(other, &Default::default())
     }
@@ -1289,12 +1446,12 @@ pub trait PolylineRef<'a> {
     /// Find all intersects between two polylines using the options provided.
     #[inline]
     fn find_intersects_opt<'b, P>(
-        &'a self,
+        &self,
         other: &'b P,
         options: &FindIntersectsOptions<Self::Num>,
     ) -> PlineIntersectsCollection<Self::Num>
     where
-        P: PolylineRef<'b, Num = Self::Num>,
+        P: PolylineRef<Num = Self::Num>,
     {
         find_intersects(self, other, options)
     }
@@ -1318,7 +1475,7 @@ pub trait PolylineRef<'a> {
     /// assert!(offset_pline[0].fuzzy_eq(PlineVertex::new(0.2, 0.0, 1.0)));
     /// assert!(offset_pline[1].fuzzy_eq(PlineVertex::new(0.8, 0.0, 1.0)));
     /// ```
-    fn parallel_offset(&'a self, offset: Self::Num) -> Vec<Self::OutputPolyline> {
+    fn parallel_offset(&self, offset: Self::Num) -> Vec<Self::OutputPolyline> {
         self.parallel_offset_opt(offset, &Default::default())
     }
 
@@ -1351,7 +1508,7 @@ pub trait PolylineRef<'a> {
     /// assert!(offset_pline[1].fuzzy_eq(PlineVertex::new(0.8, 0.0, 1.0)));
     /// ```
     fn parallel_offset_opt(
-        &'a self,
+        &self,
         offset: Self::Num,
         options: &PlineOffsetOptions<Self::Num>,
     ) -> Vec<Self::OutputPolyline> {
@@ -1359,7 +1516,7 @@ pub trait PolylineRef<'a> {
     }
 }
 
-pub trait PolylineRefMut<'a>: PolylineRef<'a> {
+pub trait PolylineRefMut<'a>: PolylineRef {
     type VertexIterMut: Iterator<Item = &'a mut PlineVertex<Self::Num>> + 'a;
 
     /// Set the vertex data at a given index of the polyline.
@@ -1410,7 +1567,7 @@ pub trait PolylineRefMut<'a>: PolylineRef<'a> {
     /// Copy all vertexes from `other` to the end of this polyline.
     fn extend<P>(&mut self, other: &P)
     where
-        for<'b> P: PolylineRef<'b, Num = Self::Num>,
+        P: PolylineRef<Num = Self::Num>,
     {
         self.extend_vertexes(other.iter_vertexes());
     }
@@ -1597,16 +1754,11 @@ impl Iterator for PlineSegIndexIterator {
     }
 }
 
-impl<'a, T> PolylineRef<'a> for Polyline<T>
+impl<'a, T> PolylineRef for Polyline<T>
 where
     T: Real,
 {
     type Num = T;
-
-    type SegmentIter = PlineSegIterator<'a, Self::Num>;
-
-    type VertexIter = Copied<std::slice::Iter<'a, PlineVertex<Self::Num>>>;
-
     type OutputPolyline = Polyline<T>;
 
     #[inline]
@@ -1627,16 +1779,6 @@ where
     #[inline]
     fn at(&self, index: usize) -> PlineVertex<Self::Num> {
         self[index]
-    }
-
-    #[inline]
-    fn iter_segments(&'a self) -> Self::SegmentIter {
-        PlineSegIterator::new(self)
-    }
-
-    #[inline]
-    fn iter_vertexes(&'a self) -> Self::VertexIter {
-        self.vertex_data.iter().copied()
     }
 }
 

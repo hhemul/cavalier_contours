@@ -31,12 +31,9 @@ where
 }
 
 /// Create all the raw parallel offset segments of a polyline using the `offset` value given.
-pub fn create_untrimmed_raw_offset_segs<'a, P, T>(
-    polyline: &'a P,
-    offset: T,
-) -> Vec<RawPlineOffsetSeg<T>>
+pub fn create_untrimmed_raw_offset_segs<P, T>(polyline: &P, offset: T) -> Vec<RawPlineOffsetSeg<T>>
 where
-    P: PolylineRef<'a, Num = T> + ?Sized,
+    P: PolylineRef<Num = T> + ?Sized,
     T: Real,
 {
     let mut result = Vec::new();
@@ -479,9 +476,9 @@ fn arc_arc_join<T, O>(
     }
 }
 
-pub fn create_raw_offset_polyline<'a, P, T, O>(polyline: &'a P, offset: T, pos_equal_eps: T) -> O
+pub fn create_raw_offset_polyline<P, T, O>(polyline: &P, offset: T, pos_equal_eps: T) -> O
 where
-    P: PolylineRef<'a, Num = T> + ?Sized,
+    P: PolylineRef<Num = T> + ?Sized,
     T: Real,
     O: for<'b> PolylineRefMut<'b, Num = T> + PolylineCreation,
 {
@@ -617,8 +614,8 @@ where
 }
 
 #[inline]
-fn point_valid_for_offset<'a, P, T>(
-    polyline: &'a P,
+fn point_valid_for_offset<P, T>(
+    polyline: &P,
     offset: T,
     aabb_index: &StaticAABB2DIndex<T>,
     point: Vector2<T>,
@@ -626,7 +623,7 @@ fn point_valid_for_offset<'a, P, T>(
     offset_tol: T,
 ) -> bool
 where
-    P: PolylineRef<'a, Num = T> + ?Sized,
+    P: PolylineRef<Num = T> + ?Sized,
     T: Real,
 {
     let abs_offset = offset.abs() - offset_tol;
@@ -655,16 +652,16 @@ where
     point_valid
 }
 
-pub fn slices_from_raw_offset<'a, 'b, P, R, T>(
-    original_polyline: &'a P,
-    raw_offset_polyline: &'b R,
+pub fn slices_from_raw_offset<P, R, T>(
+    original_polyline: &P,
+    raw_offset_polyline: &R,
     orig_polyline_index: &StaticAABB2DIndex<T>,
     offset: T,
     options: &PlineOffsetOptions<T>,
 ) -> Vec<OpenPlineSlice<T>>
 where
-    P: PolylineRef<'a, Num = T> + ?Sized,
-    R: PolylineRef<'b, Num = T> + ?Sized,
+    P: PolylineRef<Num = T> + ?Sized,
+    R: PolylineRef<Num = T> + ?Sized,
     T: Real,
 {
     debug_assert!(
@@ -891,15 +888,15 @@ where
 }
 
 /// Adds circle intersects to the `intersect_lookups` given.
-fn visit_circle_intersects<'a, P, T, F>(
-    pline: &'a P,
+fn visit_circle_intersects<P, T, F>(
+    pline: &P,
     circle_center: Vector2<T>,
     circle_radius: T,
     aabb_index: &StaticAABB2DIndex<T>,
     visitor: &mut F,
     options: &PlineOffsetOptions<T>,
 ) where
-    P: PolylineRef<'a, Num = T> + ?Sized,
+    P: PolylineRef<Num = T> + ?Sized,
     T: Real,
     F: FnMut(usize, Vector2<T>),
 {
@@ -971,17 +968,17 @@ fn visit_circle_intersects<'a, P, T, F>(
     }
 }
 
-pub fn slices_from_dual_raw_offsets<'a, 'b, P, R, T>(
-    original_polyline: &'a P,
-    raw_offset_polyline: &'b R,
-    dual_raw_offset_polyline: &'b R,
+pub fn slices_from_dual_raw_offsets<P, R, T>(
+    original_polyline: &P,
+    raw_offset_polyline: &R,
+    dual_raw_offset_polyline: &R,
     orig_polyline_index: &StaticAABB2DIndex<T>,
     offset: T,
     options: &PlineOffsetOptions<T>,
 ) -> Vec<OpenPlineSlice<T>>
 where
-    P: PolylineRef<'a, Num = T> + ?Sized,
-    R: PolylineRef<'b, Num = T> + ?Sized,
+    P: PolylineRef<Num = T> + ?Sized,
+    R: PolylineRef<Num = T> + ?Sized,
     T: Real,
 {
     let mut result = Vec::new();
@@ -1280,15 +1277,15 @@ where
     result
 }
 
-pub fn stitch_slices_together<'a, P, T, O>(
-    raw_offset_pline: &'a P,
+pub fn stitch_slices_together<P, T, O>(
+    raw_offset_pline: &P,
     slices: &[OpenPlineSlice<T>],
     is_closed: bool,
     orig_max_index: usize,
     options: &PlineOffsetOptions<T>,
 ) -> Vec<O>
 where
-    P: PolylineRef<'a, Num = T> + ?Sized,
+    P: PolylineRef<Num = T> + ?Sized,
     T: Real,
     O: for<'b> PolylineRefMut<'b, Num = T> + PolylineCreation,
 {
@@ -1425,13 +1422,9 @@ where
     result
 }
 
-pub fn parallel_offset<'a, P, T, O>(
-    polyline: &'a P,
-    offset: T,
-    options: &PlineOffsetOptions<T>,
-) -> Vec<O>
+pub fn parallel_offset<P, T, O>(polyline: &P, offset: T, options: &PlineOffsetOptions<T>) -> Vec<O>
 where
-    P: PolylineRef<'a, Num = T> + ?Sized,
+    P: PolylineRef<Num = T> + ?Sized,
     T: Real,
     O: for<'b> PolylineRefMut<'b, Num = T> + PolylineCreation,
 {
